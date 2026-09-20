@@ -1,0 +1,156 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const WA = '5493755538503';
+const wa = (msg: string) => `https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
+
+const servicios = [
+  { t: 'Celulares', d: 'Pin de carga y pantallas A12, A14, Moto G. En el día.', m: 'Hola, mi celu es: ' },
+  { t: 'Impresoras Epson', d: 'L3150 / L3210 / L3250. Limpieza y domicilio.', m: 'Hola, mi impresora Epson modelo: ' },
+  { t: 'Compus', d: 'Windows desde cero y limpieza básica.', m: 'Hola, mi compu es notebook / PC: ' },
+];
+
+const precios = [
+  { t: 'Pin de carga', p: '$28.000', m: 'Hola, quiero presupuesto de pin de carga. Mi celu es: ' },
+  { t: 'Pantalla colocada', p: '$55.000', m: 'Hola, rompí la pantalla. Mi modelo es: ' },
+  { t: 'Mantenimiento Epson', p: '$35.000', m: 'Hola, mi Epson mancha / no imprime. Modelo: ' },
+  { t: 'Windows / limpieza', p: 'Consultar', m: 'Hola, quiero Windows / limpieza para: ' },
+];
+---
+
+<Layout>
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track">
+      <span>Pin de carga en el día <i>•</i> Pantallas colocadas <i>•</i> Epson L3150 / L3250 <i>•</i> Presupuesto de frente <i>•</i> Garantía 90 días <i>•</i> Pasá por el local&nbsp;&nbsp;</span>
+      <span>Pin de carga en el día <i>•</i> Pantallas colocadas <i>•</i> Epson L3150 / L3250 <i>•</i> Presupuesto de frente <i>•</i> Garantía 90 días <i>•</i> Pasá por el local&nbsp;&nbsp;</span>
+    </div>
+  </div>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="container hero-grid">
+      <div>
+        <h1>Tu equipo en buenas manos. <span>Reparación en el día.</span></h1>
+        <p class="lead">Celus, impresoras y compus. Precio antes de tocar, garantía escrita y aviso por WhatsApp.</p>
+        <div class="hero-cta">
+          <a href="#arreglo" class="btn btn-primary">Dónde está mi arreglo</a>
+          <a href={wa('Hola, quiero un presupuesto. Mi equipo es: ')} target="_blank" rel="noopener" class="btn btn-ghost">WhatsApp</a>
+        </div>
+        <div class="trust">
+          <div><strong>+1.800</strong><span>vecinos</span></div>
+          <div><strong>90 días</strong><span>garantía escrita</span></div>
+          <div><strong>3755 53-8503</strong><span>hablanos simple</span></div>
+        </div>
+      </div>
+      <div class="ticket reveal visible">
+        <div class="ticket-head"><b>Seguí tu arreglo</b><span>ZT-1834</span></div>
+        <div class="tracker-box" style="margin:1rem">
+          <div class="tracker-input">
+            <input id="ticketInput" placeholder="Tu código: ZT-…" maxlength="12" />
+            <button class="btn btn-primary" id="ticketBtn">Ver</button>
+          </div>
+          <div id="ticketResult"></div>
+        </div>
+        <div class="ticket-foot">
+          <a href="#precios" class="btn btn-ghost btn-block">Ver precios ↓</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUE HACEMOS -->
+  <section style="padding-top:2.2rem;padding-bottom:2.2rem">
+    <div class="container">
+      <div class="grid-3">
+        {servicios.map((s) => (
+          <a class="card reveal" href={wa(`Hola, tengo este problema: ${s.t}. `)} target="_blank" rel="noopener">
+            <h3>{s.t}</h3>
+            <p>{s.d}</p>
+            <b style="color:var(--green-bright);font-size:.88rem">Consultar →</b>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- PRECIOS -->
+  <section id="precios" style="background:#050c14;border-block:1px solid var(--line);padding-top:2.2rem;padding-bottom:2.2rem">
+    <div class="container">
+      <div class="section-head reveal" style="margin-bottom:1.2rem">
+        <div class="eyebrow">Precios claros</div>
+        <h2>¿Cuánto sale?</h2>
+      </div>
+      <div class="grid-3" id="arreglo">
+        {precios.map((p) => (
+          <div class="card price-card reveal">
+            <h3>{p.t}</h3>
+            <div class="p-price">{p.p}</div>
+            <a class="btn btn-primary btn-block btn-sm" style="margin-top:.7rem" target="_blank" rel="noopener" href={wa(p.m)}>Pedir por WhatsApp</a>
+          </div>
+        ))}
+      </div>
+      <div class="kit-box reveal">
+        <div><span class="flag">Stock local</span><h3>Kit Salvavidas $25.000</h3><p style="color:var(--muted);font-size:.9rem">Funda + vidrio colocado + cargador bueno. Retirá hoy.</p></div>
+        <a href="/tienda" class="btn btn-primary">Ver tienda →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACTO -->
+  <section id="contacto" style="padding-top:2.2rem;padding-bottom:2.2rem">
+    <div class="container split">
+      <div class="reveal">
+        <div class="eyebrow">Contacto</div>
+        <h2>Pasate o escribinos</h2>
+        <p style="color:var(--muted)">San Vicente centro · Lun a Sáb 9–13 / 16–20hs.</p>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem">
+          <a class="btn btn-primary" target="_blank" rel="noopener" href={wa('Hola, necesito ayuda con: ')}>WhatsApp 3755 53-8503</a>
+          <a class="btn btn-ghost" href="/tienda">Ver tienda</a>
+        </div>
+      </div>
+      <form class="panel reveal" id="contactForm">
+        <div class="field"><label for="mensaje">Contanos en una línea</label><textarea id="mensaje" name="mensaje" rows="3" required placeholder="Ej: A12 no carga, ¿cuánto sale?"></textarea></div>
+        <button class="btn btn-primary btn-block" type="submit">Enviar por WhatsApp</button>
+      </form>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div class="foot-bottom" style="border:0;margin-top:0">
+        <span>© <span id="year">2026</span> ZonaTecno · San Vicente</span>
+        <span><a href="/tienda">Tienda</a> · Garantía 90 días</span>
+      </div>
+    </div>
+  </footer>
+
+  <a class="wa" href={wa('Hola, necesito ayuda con mi equipo')} target="_blank" rel="noopener" aria-label="WhatsApp">
+    <svg viewBox="0 0 24 24" fill="#04120a"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.2 14.2c-.22.62-1.28 1.19-1.78 1.23-.48.04-1.08.22-3.58-.75-3.03-1.17-4.96-4.2-5.1-4.4-.15-.2-1.2-1.6-1.2-3.05s.76-2.16 1.03-2.46c.27-.3.6-.37.8-.37h.57c.18 0 .43-.06.67.51.25.58.85 2 .93 2.15.07.15.12.32.02.52-.1.2-.15.32-.3.5-.15.17-.31.39-.44.52-.15.15-.3.31-.13.61.17.3.76 1.26 1.63 2.04 1.12 1 2.1 1.31 2.4 1.46.3.15.47.12.65-.08.17-.2.73-.85.92-1.15.2-.3.4-.25.67-.15.27.1 1.76.83 2.06.98.3.15.5.22.57.35.08.12.08.72-.14 1.34z"/></svg>
+  </a>
+
+<script define:vars={{ WA }}>
+  const DB = {
+    'ZT-1834': { equipo: 'Moto G84 · no cargaba', estado: 2, detalle: 'Pin $28.000 · listo hoy 18hs. ¿Lo aprobás?' },
+    'ZT-1835': { equipo: 'Epson L3250 · manchaba', estado: 3, detalle: 'Lista. Podés retirar.' },
+  };
+  const NAMES = ['Recibido', 'Revisado', 'Reparando', 'Listo'];
+  const input = document.getElementById('ticketInput');
+  const res = document.getElementById('ticketResult');
+  function lookup(){
+    const code = (input.value||'').trim().toUpperCase();
+    if(!code){ res.innerHTML = '<div class="help-msg">Escribí tu código, ej: ZT-1834</div>'; return; }
+    const t = DB[code];
+    if(!t){ res.innerHTML = `<div class="help-msg">No encontramos <b>${code}</b>. <a style="color:var(--green-bright);font-weight:700" target="_blank" rel="noopener" href="https://wa.me/${WA}?text=${encodeURIComponent('Hola, mi ticket es '+code)}">Preguntanos acá</a>.</div>`; return; }
+    res.innerHTML = `<div class="ticket-mini"><strong>${code} · ${t.equipo}</strong>
+      <div class="steps-mini" style="margin:.6rem 0;padding:0">${NAMES.map((n,i)=>`<div class="step ${i<t.estado?'done':i===t.estado?'active':''}"><i>${i<t.estado?'✓':i===t.estado?'●':'○'}</i><span>${n}</span></div>`).join('')}</div>
+      <div class="help-msg">${t.detalle}</div>
+      <a class="btn btn-primary btn-sm btn-block" style="margin-top:.6rem" target="_blank" rel="noopener" href="https://wa.me/${WA}?text=${encodeURIComponent('Hola, soy '+code+'. ')}">Aprobar / Preguntar</a></div>`;
+  }
+  document.getElementById('ticketBtn').onclick = lookup;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); lookup(); } });
+  document.getElementById('contactForm').onsubmit = (e)=>{
+    e.preventDefault();
+    const m = new FormData(e.target).get('mensaje');
+    open(`https://wa.me/${WA}?text=${encodeURIComponent('Hola, soy de San Vicente. '+m)}`,'_blank');
+  };
+</script>
+</Layout>

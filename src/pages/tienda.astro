@@ -1,0 +1,333 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { PRODUCTS, FREE_SHIPPING_FROM, fmt } from '../data/products';
+
+const destacados = PRODUCTS.filter((p) => p.badge).slice(0, 3);
+const cats = ['todos', 'celulares', 'impresoras', 'computacion', 'audio', 'accesorios'];
+const catLabels: Record<string,string> = { todos: 'Todo', celulares: 'Celulares', impresoras: 'Impresoras', computacion: 'Computación', audio: 'Audio', accesorios: 'Accesorios y hogar' };
+---
+
+<Layout title="Tienda — ZonaTecno.uno San Vicente" description="Stock real en San Vicente, Misiones: Kit Salvavidas, tintas, celulares gama media y accesorios. Retirá hoy en 1 hora.">
+  <section class="shop-hero">
+    <div class="container">
+      <div class="crumbs"><a href="/">Inicio</a> / <b>Tienda</b></div>
+      <h1>Stock en San Vicente — Retirá hoy en 1 hora</h1>
+      <p>Esto hay <b style="color:#fff">hoy acá</b>, no en Buenos Aires. Agregá al carrito y lo confirmamos por WhatsApp. Si sos de El Soberbio o Eldorado, te lo guardamos para cuando pases.</p>
+
+      <!-- CARRUSEL -->
+      <div class="carousel" id="carousel" aria-label="Destacados">
+        <div class="car-track" id="carTrack">
+          {destacados.map((p) => (
+            <div class="car-slide">
+              <div class="car-info">
+                <span class="flag">{p.badge}</span>
+                <h2>{p.name}</h2>
+                <p class="specs">{p.specs.join(' · ')}</p>
+                <div class="car-price"><strong>{fmt(p.price)}</strong>{p.oldPrice && <s>{fmt(p.oldPrice)}</s>}</div>
+                <div class="car-cuotas">{p.cuotas} · Stock: {p.stock} un.</div>
+                <div class="car-actions">
+                  <button class="btn btn-primary" data-add={p.id}>Agregar al carrito</button>
+                  <button class="btn btn-ghost" data-view={p.id}>Ver detalle</button>
+                </div>
+              </div>
+              <div class="car-visual" style={`background: radial-gradient(circle at 50% 20%, rgba(14,194,84,.28), transparent 60%), linear-gradient(160deg, ${p.tint}, #070e16)`}>
+                <span data-icon={p.icon} data-size="110"></span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button class="car-nav car-prev" id="carPrev" aria-label="Anterior">‹</button>
+        <button class="car-nav car-next" id="carNext" aria-label="Siguiente">›</button>
+        <div class="car-dots" id="carDots"></div>
+      </div>
+
+      <!-- TOOLBAR -->
+      <div class="toolbar">
+        <div class="chips" id="chips">
+          {cats.map((c) => (
+            <button class={`chip${c === 'todos' ? ' on' : ''}`} data-cat={c}>{catLabels[c]}</button>
+          ))}
+        </div>
+        <div class="searchsort">
+          <input id="q" type="search" placeholder="Buscar: ej. Epson, pin, kit, A14…" aria-label="Buscar" />
+          <select id="sort" aria-label="Ordenar">
+            <option value="rel">Orden: relevantes</option>
+            <option value="asc">Menor precio</option>
+            <option value="desc">Mayor precio</option>
+            <option value="rate">Mejor valorados</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="shop-grid" id="grid"></div>
+      <p style="color:var(--muted);font-size:.84rem;margin-top:1rem">Precios con IVA. Transferencia · Efectivo en local · MercadoPago. San Vicente centro · Lun a Sáb 9–13 / 16–20hs. Envío gratis desde {fmt(FREE_SHIPPING_FROM)}.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div class="foot-bottom" style="border:0;margin-top:0">
+        <span><a href="/">← Volver a la página principal</a></span>
+        <span>© <span id="year">2026</span> ZonaTecno.uno</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- CARRITO -->
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="cartDrawer" aria-label="Carrito">
+    <header><strong>Tu carrito <span id="cartN" style="color:var(--green-bright)"></span></strong><button class="btn btn-dark btn-sm" id="closeCart">Cerrar ✕</button></header>
+    <div class="drawer-items" id="cartItems"></div>
+    <footer>
+      <div class="ship-bar"><i id="shipBar" style="width:0%"></i></div>
+      <div class="tot-line" id="shipMsg"></div>
+      <div class="tot-line"><span>Subtotal</span><span id="subTotal">$0</span></div>
+      <div class="tot-line grand"><span>Total</span><span id="grandTotal">$0</span></div>
+      <button class="btn btn-primary btn-block" id="checkout">Confirmar por WhatsApp</button>
+      <button class="btn btn-ghost btn-block btn-sm" id="clearCart">Vaciar carrito</button>
+    </footer>
+  </aside>
+
+  <!-- MODAL -->
+  <div class="modal" id="modal"><div class="modal-box"><button class="modal-x" id="modalX">✕</button><div id="modalBody"></div></div></div>
+  <div class="toast-wrap" id="toasts"></div>
+
+  <script id="catalog" type="application/json" set:html={JSON.stringify(PRODUCTS)} />
+  <script define:vars={{ FREE_SHIPPING_FROM }}>
+    const WA = '5493755538503';
+    const KEY = 'zt_cart_v1';
+    const catalog = JSON.parse(document.getElementById('catalog').textContent);
+    const fmtN = (n) => '$' + n.toLocaleString('es-AR');
+    const ICONS = {
+      phone: '<svg viewBox="0 0 24 24" fill="none" stroke="#0ec254" stroke-width="1.6"><rect x="7" y="2" width="10" height="20" rx="2.5"/><line x1="11" y1="18.5" x2="13" y2="18.5"/></svg>',
+      laptop: '<svg viewBox="0 0 24 24" fill="none" stroke="#0ec254" stroke-width="1.6"><rect x="2" y="4" width="20" height="12" rx="2"/><path d="M2 20h20"/></svg>',
+      pc: '<svg viewBox="0 0 24 24" fill="none" stroke="#0ec254" stroke-width="1.6"><rect x="6" y="2" width="12" height="20" rx="2"/><circle cx="12" cy="17" r="1.4"/><line x1="9" y1="5" x2="9.5" y2="5"/></svg>',
+      audio: '<svg viewBox="0 0 24 24" fill="none" stroke="#0ec254" stroke-width="1.6"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2" y="13" width="4" height="8" rx="1.5"/><rect x="18" y="13" width="4" height="8" rx="1.5"/></svg>',
+      watch: '<svg viewBox="0 0 24 24" fill="none" stroke="#0ec254" stroke-width="1.6"><rect x="7" y="6" width="10" height="12" rx="3"/><path d="M9 6V3h6v3M9 18v3h6v-3M12 10v2l1.5 1.5"/></svg>',
+      charger: '<svg viewBox="0 0 24 24" fill="none" stroke="#0ec254" stroke-width="1.6"><rect x="7" y="7" width="10" height="14" rx="2"/><path d="M9 7V3h6v4M12 10l-2 4h4l-2 4"/></svg>',
+      printer: '<svg viewBox="0 0 24 24" fill="none" stroke="#0ec254" stroke-width="1.6"><rect x="4" y="8" width="16" height="9" rx="2"/><rect x="7" y="3" width="10" height="5" rx="1"/><rect x="7" y="14" width="10" height="7" rx="1"/><circle cx="17.5" cy="11" r=".8" fill="#0ec254"/></svg>',
+    };
+    const paintIcons = (root = document) => root.querySelectorAll('[data-icon]').forEach((el) => {
+      const k = el.getAttribute('data-icon');
+      if (ICONS[k]) { el.innerHTML = ICONS[k]; const s = el.querySelector('svg'); if (s && el.getAttribute('data-size')) { s.style.width = el.getAttribute('data-size') + 'px'; s.style.height = el.getAttribute('data-size') + 'px'; } }
+    });
+    paintIcons();
+
+    // ---- Carrusel ----
+    const track = document.getElementById('carTrack');
+    const slides = [...track.children];
+    const dotsBox = document.getElementById('carDots');
+    let idx = 0, timer;
+    slides.forEach((_, i) => {
+      const d = document.createElement('button');
+      d.setAttribute('aria-label', 'Ir al destacado ' + (i + 1));
+      d.addEventListener('click', () => go(i, true));
+      dotsBox.appendChild(d);
+    });
+    const dots = [...dotsBox.children];
+    function go(i, manual) {
+      idx = (i + slides.length) % slides.length;
+      track.style.transform = `translateX(-${idx * 100}%)`;
+      dots.forEach((d, j) => d.classList.toggle('on', j === idx));
+      if (manual) restart();
+    }
+    function restart() { clearInterval(timer); timer = setInterval(() => go(idx + 1), 6000); }
+    document.getElementById('carPrev').onclick = () => go(idx - 1, true);
+    document.getElementById('carNext').onclick = () => go(idx + 1, true);
+    let sx = 0;
+    track.addEventListener('touchstart', (e) => (sx = e.touches[0].clientX), { passive: true });
+    track.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].clientX - sx;
+      if (Math.abs(dx) > 40) go(idx + (dx < 0 ? 1 : -1), true);
+    }, { passive: true });
+    go(0); restart();
+
+    // ---- Tienda: filtros + grid ----
+    let cat = 'todos', q = '', sort = 'rel';
+    const qtySel = {};
+    const grid = document.getElementById('grid');
+    const byId = (id) => catalog.find((p) => p.id === id);
+
+    document.getElementById('chips').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-cat]');
+      if (!b) return;
+      cat = b.dataset.cat;
+      document.querySelectorAll('#chips .chip').forEach((c) => c.classList.toggle('on', c === b));
+      render();
+    });
+    document.getElementById('q').addEventListener('input', (e) => { q = e.target.value.toLowerCase(); render(); });
+    document.getElementById('sort').addEventListener('change', (e) => { sort = e.target.value; render(); });
+
+    function filtered() {
+      let list = catalog.filter((p) =>
+        (cat === 'todos' || p.cat === cat) &&
+        (!q || (p.name + ' ' + p.specs.join(' ')).toLowerCase().includes(q))
+      );
+      if (sort === 'asc') list = [...list].sort((a, b) => a.price - b.price);
+      if (sort === 'desc') list = [...list].sort((a, b) => b.price - a.price);
+      if (sort === 'rate') list = [...list].sort((a, b) => b.rating - a.rating);
+      return list;
+    }
+
+    function render() {
+      const list = filtered();
+      if (!list.length) {
+        grid.innerHTML = '<div class="empty-state">No encontramos nada con ese filtro.<br/>Probá con “Ryzen”, “JBL” o “256GB”.</div>';
+        return;
+      }
+      grid.innerHTML = list.map((p) => `
+        <article class="card p-card">
+          <div class="p-visual" style="background: radial-gradient(circle at 50% 20%, rgba(14,194,84,.22), transparent 60%), linear-gradient(160deg, ${p.tint}, #070e16)">
+            ${p.badge ? `<span class="p-badge">${p.badge}</span>` : ''}
+            <span class="p-stock${p.stock <= 4 ? ' low' : ''}">${p.stock <= 4 ? `Quedan ${p.stock}` : 'En stock'}</span>
+            ${ICONS[p.icon]}
+          </div>
+          <div class="p-cat">${p.catLabel}</div>
+          <h3>${p.name}</h3>
+          <div class="p-rate"><b>★ ${p.rating}</b> (${p.reviews} reseñas)</div>
+          <ul class="p-specs">${p.specs.map((s) => `<li>${s}</li>`).join('')}</ul>
+          <div class="p-price">${fmtN(p.price)}${p.oldPrice ? `<s>${fmtN(p.oldPrice)}</s>` : ''}</div>
+          <div class="p-cuotas">${p.cuotas}</div>
+          <div class="p-actions">
+            <div class="qty">
+              <button data-dec="${p.id}" aria-label="Menos">−</button>
+              <span id="qty-${p.id}">${qtySel[p.id] || 1}</span>
+              <button data-inc="${p.id}" aria-label="Más">+</button>
+            </div>
+            <button class="btn btn-primary btn-sm" style="flex:1" data-add="${p.id}">Agregar</button>
+          </div>
+          <button class="btn btn-ghost btn-sm btn-block" style="margin-top:.5rem" data-view="${p.id}">Detalle</button>
+        </article>`).join('');
+    }
+    render();
+
+    grid.addEventListener('click', (e) => {
+      const inc = e.target.closest('[data-inc]');
+      const dec = e.target.closest('[data-dec]');
+      if (inc) { const id = inc.dataset.inc; qtySel[id] = Math.min(9, (qtySel[id] || 1) + 1); document.getElementById('qty-' + id).textContent = qtySel[id]; }
+      if (dec) { const id = dec.dataset.dec; qtySel[id] = Math.max(1, (qtySel[id] || 1) - 1); document.getElementById('qty-' + id).textContent = qtySel[id]; }
+    });
+    document.addEventListener('click', (e) => {
+      const add = e.target.closest('[data-add]');
+      if (add) addToCart(add.dataset.add, qtySel[add.dataset.add] || 1);
+      const view = e.target.closest('[data-view]');
+      if (view) openModal(view.dataset.view);
+    });
+
+    // ---- Carrito ----
+    const drawer = document.getElementById('cartDrawer');
+    const overlay = document.getElementById('overlay');
+    const itemsBox = document.getElementById('cartItems');
+    const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
+    const save = (c) => { localStorage.setItem(KEY, JSON.stringify(c)); document.dispatchEvent(new CustomEvent('zt:cart')); };
+
+    function addToCart(id, qty = 1) {
+      const c = load();
+      const line = c.find((l) => l.id === id);
+      const p = byId(id);
+      const cur = line ? line.qty : 0;
+      if (cur + qty > p.stock) { toast(`Solo quedan ${p.stock} un. de ${p.name}`); qty = p.stock - cur; if (qty <= 0) return openCart(); }
+      if (line) line.qty += qty; else c.push({ id, qty });
+      save(c); renderCart();
+      toast(`${p.name} agregado (${qty})`);
+      openCart();
+    }
+
+    function renderCart() {
+      const c = load();
+      const n = c.reduce((a, l) => a + l.qty, 0);
+      document.getElementById('cartN').textContent = n ? `(${n})` : '';
+      if (!c.length) {
+        itemsBox.innerHTML = '<div class="empty-state">Tu carrito está vacío.<br/>Agregá algo de la tienda.</div>';
+      } else {
+        itemsBox.innerHTML = c.map((l) => {
+          const p = byId(l.id);
+          return `<div class="c-item">
+            <div class="c-thumb" style="background:${p.tint}">${ICONS[p.icon]}</div>
+            <div><strong style="font-size:.88rem">${p.name}</strong><br/><small>${fmtN(p.price)} c/u</small>
+              <div class="c-qty" style="margin-top:.4rem">
+                <button data-cdec="${p.id}">−</button><span>${l.qty}</span><button data-cinc="${p.id}">+</button>
+                <button class="c-rm" data-rm="${p.id}">quitar</button>
+              </div>
+            </div>
+            <div class="c-price">${fmtN(p.price * l.qty)}</div>
+          </div>`;
+        }).join('');
+      }
+      const sub = c.reduce((a, l) => a + byId(l.id).price * l.qty, 0);
+      document.getElementById('subTotal').textContent = fmtN(sub);
+      document.getElementById('grandTotal').textContent = fmtN(sub);
+      document.getElementById('shipBar').style.width = Math.min(100, (sub / FREE_SHIPPING_FROM) * 100) + '%';
+      document.getElementById('shipMsg').innerHTML = sub >= FREE_SHIPPING_FROM
+        ? '<b style="color:var(--green-bright)">Tenés envío gratis</b>'
+        : `Te faltan <b style="color:#fff">${fmtN(FREE_SHIPPING_FROM - sub)}</b> para el envío gratis`;
+      document.getElementById('checkout').disabled = !c.length;
+    }
+
+    itemsBox.addEventListener('click', (e) => {
+      const c = load();
+      const inc = e.target.closest('[data-cinc]');
+      const dec = e.target.closest('[data-cdec]');
+      const rm = e.target.closest('[data-rm]');
+      if (inc) { const l = c.find((x) => x.id === inc.dataset.cinc); const p = byId(l.id); if (l.qty < p.stock) l.qty++; else toast(`Stock máximo: ${p.stock}`); }
+      if (dec) { const l = c.find((x) => x.id === dec.dataset.cdec); l.qty--; if (l.qty <= 0) c.splice(c.indexOf(l), 1); }
+      if (rm) { c.splice(c.findIndex((x) => x.id === rm.dataset.rm), 1); }
+      save(c); renderCart();
+    });
+    document.getElementById('clearCart').onclick = () => { save([]); renderCart(); };
+
+    document.getElementById('checkout').onclick = () => {
+      const c = load();
+      if (!c.length) return;
+      const lines = c.map((l) => { const p = byId(l.id); return `• ${p.name} x${l.qty} — ${fmtN(p.price * l.qty)}`; }).join('\n');
+      const total = c.reduce((a, l) => a + byId(l.id).price * l.qty, 0);
+      const msg = `Hola ZonaTecno, quiero confirmar este pedido:\n${lines}\nTotal: ${fmtN(total)}\nMi nombre es: `;
+      open(`https://wa.me/${WA}?text=${encodeURIComponent(msg)}`, '_blank');
+    };
+
+    function openCart() { drawer.classList.add('open'); overlay.classList.add('show'); }
+    function closeCart() { drawer.classList.remove('open'); overlay.classList.remove('show'); }
+    document.querySelectorAll('[data-open-cart]').forEach((b) => b.addEventListener('click', openCart));
+    document.addEventListener('zt:open-cart', openCart);
+    document.getElementById('closeCart').onclick = closeCart;
+    overlay.onclick = closeCart;
+    addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeCart(); closeModal(); } });
+    renderCart();
+
+    // ---- Modal detalle ----
+    const modal = document.getElementById('modal');
+    const modalBody = document.getElementById('modalBody');
+    function openModal(id) {
+      const p = byId(id);
+      modalBody.innerHTML = `
+        <div class="p-cat">${p.catLabel}</div>
+        <h2 style="margin:.3rem 0 .4rem;line-height:1.2">${p.name}</h2>
+        <div class="p-rate"><b>★ ${p.rating}</b> (${p.reviews} reseñas) · ${p.stock} en stock</div>
+        <div class="p-visual" style="margin-top:.8rem;background:linear-gradient(160deg, ${p.tint}, #070e16)">${ICONS[p.icon]}</div>
+        <ul class="p-specs" style="margin-top:.8rem">${p.specs.map((s) => `<li>${s}</li>`).join('')}</ul>
+        <div class="p-price" style="margin-top:.6rem">${fmtN(p.price)}${p.oldPrice ? `<s>${fmtN(p.oldPrice)}</s>` : ''}</div>
+        <div class="p-cuotas">${p.cuotas}</div>
+        <div style="display:flex;gap:.6rem;margin-top:.8rem;flex-wrap:wrap">
+          <button class="btn btn-primary" style="flex:1" data-add="${p.id}">Agregar al carrito</button>
+          <a class="btn btn-ghost" target="_blank" rel="noopener" href="https://wa.me/${WA}?text=${encodeURIComponent('Hola, me interesa ' + p.name)}">Preguntar</a>
+        </div>
+        <p style="color:var(--muted);font-size:.82rem;margin-top:.8rem">Garantía 12 meses productos · 90 días taller · Factura · Retiro en San Vicente en 1 hora.</p>`;
+      modal.classList.add('show');
+    }
+    function closeModal() { modal.classList.remove('show'); }
+    document.getElementById('modalX').onclick = closeModal;
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+    // ---- Toast ----
+    function toast(msg) {
+      const box = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.innerHTML = '<span style="font-weight:800">✓</span> ' + msg;
+      box.appendChild(t);
+      setTimeout(() => { t.style.opacity = '0'; t.style.transition = '.3s'; setTimeout(() => t.remove(), 300); }, 2600);
+    }
+
+    if (location.hash === '#carrito') openCart();
+  </script>
+</Layout>
