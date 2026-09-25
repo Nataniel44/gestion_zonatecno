@@ -1,2 +1,10 @@
 [phases.setup]
 nixPkgs = ["nodejs_20"]
+
+# gestion_zonatecno es el repositorio de la app de gestión.
+# La app vive en ./app, aunque el repositorio también conserva el sitio público.
+[phases.build]
+cmds = ["cd app && npm ci && npm run build"]
+
+[phases.start]
+cmds = ["cd app && npm run start"]
