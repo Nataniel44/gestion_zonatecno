@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "description": "Subsistema híbrido multiempresa: ventas, stock, caja y taller. Offline + nube.",
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
