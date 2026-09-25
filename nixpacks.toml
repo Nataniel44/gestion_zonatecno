@@ -5,6 +5,3 @@ nixPkgs = ["nodejs_20"]
 # La app vive en ./app, aunque el repositorio también conserva el sitio público.
 [phases.build]
 cmds = ["cd app && npm ci && npm run build"]
-
-[phases.start]
-cmds = ["cd app && npm run start"]
