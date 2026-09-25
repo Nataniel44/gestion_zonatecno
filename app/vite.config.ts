@@ -3,6 +3,9 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   server: { port: 5174 },
+  preview: {
+    allowedHosts: ['gestion.zonatecno.uno', 'app.zonatecno.uno']
+  },
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
