@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "start": "vite preview --host 0.0.0.0 --port ${PORT:-4173}",
+    "start": "vite preview --host 0.0.0.0 --port ${PORT:-3000}",
     "preview": "vite preview",
     "setup:pocketbase": "node scripts/setup-pocketbase.mjs",
     "tauri:dev": "echo \"1) npm run dev  2) npx tauri dev (requiere Rust + @tauri-apps/cli)\"",
