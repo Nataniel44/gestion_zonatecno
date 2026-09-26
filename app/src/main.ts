@@ -89,7 +89,7 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
     : '';
   return `<div class="app">${nav(tab)}
     <div class="main">
-      <div id="netbar" class="netbar" style="display:none">📴 <b>Sin internet.</b>&nbsp;Seguís vendiendo, todo se sube solo.&nbsp;<button class="btn small" id="netRetry">Probar conexión</button></div>
+      <div id="netbar" class="netbar" style="display:none">📴 <b>Sin internet.</b>&nbsp;Seguís vendiendo; las ventas quedan en este equipo y se suben al iniciar sesión.&nbsp;<button class="btn small" id="netRetry">Probar conexión</button></div>
       <div class="topbar">
         <div class="row"><h1>${tab === 'panel' ? 'Panel' : tab === 'ventas' ? 'Vender' : tab === 'productos' ? 'Stock' : tab === 'equipo' ? 'Negocio y equipo' : ''}</h1>${orgSel}</div>
         <div class="row">${statusPills(opts.syncMsg)}</div>
@@ -121,7 +121,7 @@ function bindCommon(orgs: { id: string; name: string }[], org: string) {
   void orgs; void org;
 }
 
-// Pide crear el PIN offline una vez por sesión (solo online, solo sin PIN)
+// El PIN se configura desde el panel; no se pide en cada inicio.
 function promptPin(uid: string, email: string, org: string): Promise<boolean> {
   return new Promise((resolve) => {
     const ov = document.createElement('div');
@@ -144,20 +144,6 @@ function promptPin(uid: string, email: string, org: string): Promise<boolean> {
       done(true);
     };
   });
-}
-
-async function maybeAskPin(uid: string | undefined, email: string | undefined, org: string) {
-  if (!navigator.onLine || !isCloudConfigured() || !uid || !email || uid === 'local') return;
-  if (sessionStorage.getItem('zt_pin_ask')) return;
-  sessionStorage.setItem('zt_pin_ask', '1');
-  const rec = await db.pins.get(uid);
-  if (rec) {
-    // Actualizo el negocio por si cambió desde que creó el PIN
-    if (rec.org_id !== org) await db.pins.put({ ...rec, org_id: org, updatedAt: Date.now() });
-    setLocalSession({ uid, email, org });
-    return;
-  }
-  await promptPin(uid, email, org);
 }
 
 async function requireUser() {
@@ -194,6 +180,15 @@ async function loadOrgs(): Promise<{ list: { id: string; name: string }[]; cur: 
     console.error('[ZT loadOrgs]', e);
     const st = e?.status ?? e?.response?.status;
     const msg = e?.response?.data?.message ?? e?.message ?? 'Error de nube';
+    const networkFailure = !st || /failed to fetch|network|timeout|load failed/i.test(String(msg));
+    if (networkFailure) {
+      // El equipo tiene internet pero PocketBase no responde: seguimos local
+      // para no dejar al vendedor sin caja.
+      const s = getLocalSession();
+      const demo = s?.org || getOrg() || 'demo-local';
+      setOrg(demo);
+      return { list: [{ id: demo, name: s ? 'Mi negocio' : 'Mi negocio (local)' }], cur: demo, cloudError: '' };
+    }
     return { list: [], cur: '', cloudError: (st ? '(http ' + st + ') ' : '') + msg + '. ¿Están las 8 tablas en /_/ → Collections?' };
   }
 }
@@ -367,8 +362,6 @@ async function vPanel() {
   const org = cur;
   sessionStorage.removeItem('zt_force_local'); // la nube anda: salgo del modo local forzado
   const orgName = list.find((o) => o.id === org)?.name ?? org.slice(0, 8);
-  // PIN offline: si entró con internet y aún no tiene PIN, ofrecerlo una vez
-  void maybeAskPin((user as any)?.id, (user as any)?.email, org).catch(() => {});
   // Pull nube si hay conexión (no rompe si falla: seguimos con local)
   let syncMsg = '';
   if (navigator.onLine && isCloudConfigured()) {
@@ -388,7 +381,7 @@ async function vPanel() {
     <div class="card span3"><h3>Ventas por subir</h3><div class="kpi">${pend.length} <small>· ${fmt(pendTotal)}</small></div><p class="mut">Se suben solas con internet.</p><div class="row"><button class="btn small" id="bSync">Sincronizar</button><a class="btn ghost small" href="#/ventas">Vender</a><span class="mut" id="syncMsg"></span></div></div>
     <div class="card span3"><h3>Productos</h3><div class="kpi">${prods.length}</div><p class="mut">Valor stock: ${fmt(stockVal)}</p><div class="row"><a class="btn ghost small" href="#/productos">Ver stock</a></div></div>
     <div class="card span3"><h3>Stock bajo</h3><div class="kpi" style="color:${low.length ? '#ff8fa3' : 'inherit'}">${low.length}</div><p class="mut">${low.length ? 'Hay que reponer' : 'Todo OK'}</p><div class="row"><a class="btn ghost small" href="#/productos">Reponer</a></div></div>
-    <div class="card span3"><h3>Tu app</h3><div class="kpi">⬇</div><p class="mut">Instalala en celu o PC. Anda sin internet.</p><div class="row"><button class="btn small" data-install>Descargar</button></div></div>
+    <div class="card span3"><h3>Tu app</h3><div class="kpi">⬇</div><p class="mut">Instalala en celu o PC. Anda sin internet.</p><div class="row"><button class="btn small" data-install>Descargar</button><button class="btn ghost small" id="bSetupPin">PIN sin internet</button></div></div>
     <div class="card span8"><h3>Reponer ${low.length ? `(${low.length})` : ''}</h3>
       ${low.length ? `<table><tr><th>Producto</th><th>Stock</th><th>Precio</th></tr>${low.slice(0, 8).map((p) => `<tr><td>${esc(p.name)}</td><td class="low">${p.stock} un.</td><td>${fmt(p.price)}</td></tr>`).join('')}</table>` : '<p class="mut">Sin alertas. Cuando un producto llegue a su mínimo aparece acá.</p>'}
     </div>
@@ -398,6 +391,12 @@ async function vPanel() {
     </div>
   </div>`, 'panel', { orgs: list, org, email: (user as any)?.email, syncMsg });
   bindCommon(list, org);
+  (document.getElementById('bSetupPin') as HTMLButtonElement).onclick = async () => {
+    const uid = (user as any)?.id;
+    const email = (user as any)?.email;
+    if (!uid || !email || uid === 'local') { toast('Entrá con tu cuenta para configurar el PIN'); return; }
+    await promptPin(uid, email, org);
+  };
   (document.getElementById('bSync') as HTMLButtonElement).onclick = async () => {
     (document.getElementById('syncMsg') as HTMLElement).textContent = 'sincronizando…';
     try {
