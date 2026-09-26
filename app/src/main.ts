@@ -372,8 +372,32 @@ async function vPanel() {
   const pendTotal = pend.reduce((a, s) => a + s.total, 0);
   const low = prods.filter((p) => p.stock <= p.min_stock);
   const stockVal = prods.reduce((a, p) => a + p.price * p.stock, 0);
-  const hist = await salesHistoryCloud(org, 8).catch(() => []);
+  const hist = await salesHistoryCloud(org, 50).catch(() => []);
   const today = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'short' });
+  const dayKey = (value: unknown) => {
+    const d = new Date(value as string);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const chartStart = new Date();
+  chartStart.setHours(0, 0, 0, 0);
+  chartStart.setDate(chartStart.getDate() - 6);
+  const chart = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(chartStart);
+    date.setDate(chartStart.getDate() + index);
+    const key = dayKey(date);
+    const total = [...hist, ...pend].reduce((sum, sale: any) => {
+      const saleDate = sale.created_at ?? sale.createdAt;
+      return sum + (dayKey(saleDate) === key ? Number(sale.total || 0) : 0);
+    }, 0);
+    return { label: date.toLocaleDateString('es-AR', { weekday: 'short' }).slice(0, 2), total };
+  });
+  const chartMax = Math.max(1, ...chart.map((d) => d.total));
+  const chartTotal = chart.reduce((sum, d) => sum + d.total, 0);
+  const chartHTML = chart.map((d) => {
+    const height = d.total ? Math.max(8, Math.round((d.total / chartMax) * 100)) : 3;
+    return `<div class="chart-col" title="${fmt(d.total)}"><div class="chart-bar-wrap"><i class="chart-bar" style="height:${height}%"></i></div><small>${esc(d.label)}</small></div>`;
+  }).join('');
 
   app.innerHTML = shell(`
   <p class="mut" style="margin:.2rem 0 1rem">${esc(orgName)} · ${today}</p>
@@ -382,6 +406,10 @@ async function vPanel() {
     <div class="card span3"><h3>Productos</h3><div class="kpi">${prods.length}</div><p class="mut">Valor stock: ${fmt(stockVal)}</p><div class="row"><a class="btn ghost small" href="#/productos">Ver stock</a></div></div>
     <div class="card span3"><h3>Stock bajo</h3><div class="kpi" style="color:${low.length ? '#ff8fa3' : 'inherit'}">${low.length}</div><p class="mut">${low.length ? 'Hay que reponer' : 'Todo OK'}</p><div class="row"><a class="btn ghost small" href="#/productos">Reponer</a></div></div>
     <div class="card span3"><h3>Tu app</h3><div class="kpi">⬇</div><p class="mut">Instalala en celu o PC. Anda sin internet.</p><div class="row"><button class="btn small" data-install>Descargar</button><button class="btn ghost small" id="bSetupPin">PIN sin internet</button></div></div>
+    <div class="card span8">
+      <div class="row" style="justify-content:space-between;align-items:start"><h3 style="margin:0">Ventas de la semana</h3><span class="mut">${fmt(chartTotal)}</span></div>
+      <div class="sales-chart" role="img" aria-label="Ventas de los últimos siete días: ${fmt(chartTotal)}">${chartHTML}</div>
+    </div>
     <div class="card span8"><h3>Reponer ${low.length ? `(${low.length})` : ''}</h3>
       ${low.length ? `<table><tr><th>Producto</th><th>Stock</th><th>Precio</th></tr>${low.slice(0, 8).map((p) => `<tr><td>${esc(p.name)}</td><td class="low">${p.stock} un.</td><td>${fmt(p.price)}</td></tr>`).join('')}</table>` : '<p class="mut">Sin alertas. Cuando un producto llegue a su mínimo aparece acá.</p>'}
     </div>
