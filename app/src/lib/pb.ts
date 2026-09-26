@@ -1,6 +1,7 @@
 import PocketBase from 'pocketbase';
 
-const url = (import.meta.env.VITE_PB_URL as string | undefined)?.trim();
+const configuredUrl = (import.meta.env.VITE_PB_URL as string | undefined)?.trim();
+const url = configuredUrl || (import.meta.env.PROD ? 'https://app.zonatecno.uno' : '');
 
 if (!url) {
   console.warn('[ZT] Falta VITE_PB_URL. Copia app/.env.example a app/.env con https://app.zonatecno.uno');
