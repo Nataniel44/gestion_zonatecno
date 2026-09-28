@@ -69,8 +69,9 @@ h3 { font-size: .92rem; margin: 0 0 .5rem; color: var(--mut); text-transform: up
 .text-link { color: var(--grn); font-size: .8rem; font-weight: 800; }
 .sync-card { background: linear-gradient(135deg, rgba(23,201,100,.1), transparent); }
 
-.chart-col { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: .4rem; min-width: 0; text-align: center; }
-.chart-bar-wrap { display: flex; align-items: end; justify-content: center; min-height: 0; }
+.sales-chart { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .5rem; height: 176px; margin-top: .9rem; }
+.chart-col { display: grid; grid-template-rows: 132px auto; gap: .4rem; min-width: 0; text-align: center; }
+.chart-bar-wrap { display: flex; align-items: end; justify-content: center; width: 100%; height: 132px; min-height: 0; overflow: hidden; }
 .chart-bar { display: block; width: min(32px, 72%); min-height: 3px; border-radius: 8px 8px 3px 3px; background: linear-gradient(180deg, #1fe07a, var(--grn2)); box-shadow: 0 6px 18px rgba(23,201,100,.2); }
 .chart-col small { color: var(--mut); font-size: .7rem; text-transform: capitalize; }
 .card { background: linear-gradient(180deg, rgba(255,255,255,.03), transparent), var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem 1.05rem; box-shadow: var(--shadow); min-width: 0; }
@@ -171,7 +172,9 @@ select.orgsel { max-width: 260px; }
   .topbar { align-items: flex-start; }
   .topbar h1 { font-size: 1.3rem; }
   .pill { font-size: .7rem; }
-  .sales-chart { height: 150px; gap: .3rem; }
+  .sales-chart { height: 158px; gap: .3rem; }
+  .chart-col { grid-template-rows: 116px auto; }
+  .chart-bar-wrap { height: 116px; }
   .chart-col small { font-size: .62rem; }
   .card table { display: block; max-width: 100%; overflow-x: auto; white-space: nowrap; }
   .prod-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
