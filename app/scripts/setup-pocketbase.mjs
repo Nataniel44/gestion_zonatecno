@@ -23,7 +23,7 @@ const R = {
     updateRule: 'org.owner = @request.auth.id',
     deleteRule: 'org.owner = @request.auth.id',
   },
-  products: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
+  products: { listRule: ORG, viewRule: ORG, createRule: ADMIN, updateRule: ADMIN, deleteRule: ADMIN },
   clients: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
   sales: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ADMIN, deleteRule: ADMIN },
   sale_items: { listRule: SALE, viewRule: SALE, createRule: SALE, updateRule: SALE_ADMIN, deleteRule: SALE_ADMIN },

@@ -37,6 +37,14 @@ export async function signUp(email: string, password: string, phone = '') {
   }
   await pb.collection('users').authWithPassword(email, password);
 }
+export async function verifyAccountPassword(email: string, password: string) {
+  if (!isCloudConfigured() || !navigator.onLine) return true;
+  try {
+    await pb.collection('users').authWithPassword(email, password);
+    return true;
+  } catch { return false; }
+}
+
 export async function signOut() { pb.authStore.clear(); }
 export async function getUser() {
   if (!isCloudConfigured() || !pb.authStore.isValid) return null;

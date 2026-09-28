@@ -13,8 +13,8 @@ aplicar estas reglas en el servidor:
 - `products`, `clients`, `sales`, `stock_moves` y `tickets`: acceso únicamente
   a registros cuyo `org` tiene al usuario como dueño o miembro.
 - `sale_items`: acceso únicamente si la venta pertenece a una organización permitida.
-- Los vendedores pueden crear, consultar y actualizar stock.
-- Los administradores pueden eliminar productos, ventas y movimientos.
+- Los vendedores pueden consultar stock y crear ventas.
+- Solo dueños y administradores pueden crear, editar o eliminar productos.
 - Para crear una organización, `owner` debe ser el usuario autenticado.
 
 ## 1. orgs (base)

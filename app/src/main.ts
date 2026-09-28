@@ -2,7 +2,7 @@ import './styles.css';
 import { isCloudConfigured, pbUrl, isLoggedIn } from './lib/pb';
 import { db } from './lib/localdb';
 import {
-  signIn, signUp, signOut, getUser, refreshSession, myOrgs, createOrg, addMemberById,
+  signIn, signUp, signOut, getUser, refreshSession, verifyAccountPassword, myOrgs, createOrg, addMemberById,
   pullProducts, saveProductLocal, deleteProductLocal, newLocalProduct,
   createSaleOffline, syncOutbox, salesHistoryCloud, listMembers,
   hashPin, setLocalSession, getLocalSession
@@ -510,6 +510,16 @@ async function vProductos(q = '') {
   const { list, cur, cloudError } = await loadOrgs();
   if (cloudError || !cur) { location.hash = '#/panel'; return; }
   const org = cur;
+  const role = list.find((o) => o.id === org)?.role ?? 'vendedor';
+  const canManageProducts = role === 'dueno' || role === 'admin';
+  let productAuthUntil = 0;
+  const ensureProductAuth = async () => {
+    if (!canManageProducts) { toast('Solo el dueño o un administrador puede modificar productos'); return false; }
+    if (Date.now() < productAuthUntil) return true;
+    const ok = await confirmActionPassword((user as any)?.email ?? '');
+    if (ok) productAuthUntil = Date.now() + 5 * 60 * 1000;
+    return ok;
+  };
   let rows = (await db.products.where('org_id').equals(org).toArray()).filter((p) => !p.deleted);
   if (!rows.length && navigator.onLine) { try { rows = await withTimeout(pullProducts(org)); } catch {} }
   if (!rows.length && !isCloudConfigured()) {
@@ -523,12 +533,12 @@ async function vProductos(q = '') {
   app.innerHTML = shell(`
   <div class="card"><div class="row" style="justify-content:space-between">
     <div class="row"><input id="q" placeholder="Buscar producto…" value="${esc(q)}" style="max-width:260px"/></div>
-    <button class="btn small" id="bNew">+ Producto</button>
+    ${canManageProducts ? '<button class="btn small" id="bNew">+ Producto</button>' : '<span class="pill">Solo lectura para vendedores</span>'}
   </div>
   <div style="margin-top:.7rem"><table><tr><th>Producto</th><th>Precio</th><th>Stock</th><th></th></tr>
   <tbody id="productRows">${view.map((p) => `<tr data-name="${esc(p.name.toLowerCase())}"><td><b>${esc(p.name || '(sin nombre)')}</b>${p.dirty ? ' <span class="pill warn">sin subir</span>' : ''}${p.lastError ? ' <span class="pill bad">revisar</span>' : ''}<br/><span class="mut">${esc(p.category)}${p.lastError ? ' · ' + esc(p.lastError) : ''}</span></td>
     <td>${fmt(p.price)}</td><td class="${p.stock <= p.min_stock ? 'low' : ''}">${p.stock}</td>
-    <td style="white-space:nowrap"><button class="btn ghost small" data-edit="${p.id}">Editar</button> <button class="btn ghost small" data-del="${p.id}">Borrar</button></td></tr>`).join('') || '<tr><td colspan="4" class="mut">Sin productos. Creá el primero con + Producto.</td></tr>'}
+    <td style="white-space:nowrap">${canManageProducts ? `<button class="btn ghost small" data-edit="${p.id}">Editar</button> <button class="btn ghost small" data-del="${p.id}">Borrar</button>` : '<span class="mut">—</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="mut">Sin productos. Creá el primero con + Producto.</td></tr>'}
   </tbody></table></div></div>
   <div class="card" id="editor" style="display:none"><h2 id="edT">Producto</h2>
     <div class="grid2"><input id="fName" placeholder="Nombre *" /><input id="fCat" placeholder="Categoría" />
@@ -545,13 +555,15 @@ async function vProductos(q = '') {
   };
   let editing: string | null = null;
   const openEd = (title: string) => { (document.getElementById('editor') as HTMLElement).style.display = 'block'; (document.getElementById('edT') as HTMLElement).textContent = title; };
-  (document.getElementById('bNew') as HTMLButtonElement).onclick = () => {
+  (document.getElementById('bNew') as HTMLButtonElement | null)?.addEventListener('click', async () => {
+    if (!await ensureProductAuth()) return;
     editing = null; openEd('Nuevo producto');
     (document.getElementById('fName') as HTMLInputElement).value = ''; (document.getElementById('fCat') as HTMLInputElement).value = 'general';
     (document.getElementById('fPrice') as HTMLInputElement).value = ''; (document.getElementById('fStock') as HTMLInputElement).value = ''; (document.getElementById('fMin') as HTMLInputElement).value = '3';
-  };
+  });
   (document.getElementById('bCancel') as HTMLButtonElement).onclick = () => ((document.getElementById('editor') as HTMLElement).style.display = 'none');
   document.querySelectorAll('[data-edit]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
+    if (!await ensureProductAuth()) return;
     editing = (b as HTMLButtonElement).dataset.edit!;
     const p = await db.products.get(editing); if (!p) return;
     openEd('Editar');
@@ -562,11 +574,13 @@ async function vProductos(q = '') {
     (document.getElementById('fMin') as HTMLInputElement).value = String(p.min_stock);
   });
   document.querySelectorAll('[data-del]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
+    if (!await ensureProductAuth()) return;
     if (!confirm('¿Borrar de este equipo? (En nube se desactiva al sincronizar)')) return;
     await deleteProductLocal((b as HTMLButtonElement).dataset.del!);
     toast('Borrado local'); router();
   });
   (document.getElementById('bSave') as HTMLButtonElement).onclick = async () => {
+    if (!await ensureProductAuth()) return;
     const name = (document.getElementById('fName') as HTMLInputElement).value.trim();
     if (!name) { toast('Poné un nombre'); return; }
     const base = editing ? await db.products.get(editing) : newLocalProduct(org);
@@ -656,6 +670,33 @@ async function vVentas() {
   render();
 }
 
+function confirmActionPassword(email: string): Promise<boolean> {
+  if (!navigator.onLine) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.className = 'ovl';
+    ov.innerHTML = `<div class="card modal-card">
+      <h2>Confirmá tu identidad</h2>
+      <p class="mut">Esta acción cambia datos del negocio. Escribí tu contraseña para continuar.</p>
+      <div class="field"><label>Contraseña</label><input id="confirmPw" type="password" autocomplete="current-password" placeholder="Tu contraseña" /></div>
+      <p id="confirmErr" class="auth-err" style="display:none"></p>
+      <div class="row" style="margin-top:.6rem"><button class="btn" id="confirmOk">Continuar</button><button class="btn ghost" id="confirmCancel">Cancelar</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    const finish = (ok: boolean) => { ov.remove(); resolve(ok); };
+    (document.getElementById('confirmCancel') as HTMLButtonElement).onclick = () => finish(false);
+    (document.getElementById('confirmOk') as HTMLButtonElement).onclick = async () => {
+      const input = document.getElementById('confirmPw') as HTMLInputElement;
+      const error = document.getElementById('confirmErr') as HTMLElement;
+      if (!input.value) { error.style.display = 'block'; error.textContent = 'Escribí tu contraseña.'; return; }
+      const ok = await verifyAccountPassword(email, input.value);
+      if (!ok) { error.style.display = 'block'; error.textContent = 'Contraseña incorrecta.'; return; }
+      finish(true);
+    };
+    (document.getElementById('confirmPw') as HTMLInputElement).focus();
+  });
+}
+
 // ---------- Admin (solo dueño) ----------
 async function vAdmin() {
   const user = await requireUser();
@@ -742,6 +783,16 @@ async function vEquipo() {
     return;
   }
   const currentName = list.find((o) => o.id === cur)?.name ?? (cur ? 'tu negocio' : '');
+  const teamRole = list.find((o) => o.id === cur)?.role ?? '';
+  const canManageTeam = teamRole === 'dueno';
+  let teamAuthUntil = 0;
+  const ensureTeamAuth = async () => {
+    if (!canManageTeam) { toast('Solo el dueño puede administrar el equipo'); return false; }
+    if (Date.now() < teamAuthUntil) return true;
+    const ok = await confirmActionPassword((user as any)?.email ?? '');
+    if (ok) teamAuthUntil = Date.now() + 5 * 60 * 1000;
+    return ok;
+  };
   const members = cur && isCloudConfigured() ? await listMembers(cur).catch(() => []) : [];
   const roleLabel = (role: string) => role === 'dueno' ? 'Dueño' : role === 'admin' ? 'Administrador' : 'Vendedor';
   const teamList = members.length
@@ -760,11 +811,12 @@ async function vEquipo() {
           <li><b>2.</b> Que te copie su ID desde <b>Equipo → Mi ID</b>.</li>
           <li><b>3.</b> Pegalo acá y elegí qué puede hacer.</li>
         </ol>
-        <div class="field"><label for="mId">ID del usuario</label><input id="mId" autocomplete="off" placeholder="Ej: 8fj2k1abcde" /><small class="hint">No es el email: es el identificador que aparece en la cuenta del vendedor.</small></div>
+        <div id="mManageTools"><div class="field"><label for="mId">ID del usuario</label><input id="mId" autocomplete="off" placeholder="Ej: 8fj2k1abcde" /><small class="hint">No es el email: es el identificador que aparece en la cuenta del vendedor.</small></div>
         <div class="grid2"><div class="field"><label for="mName">Nombre (opcional)</label><input id="mName" placeholder="Ej: Ana" /></div><div class="field"><label for="mEmail">Email (opcional)</label><input id="mEmail" type="email" placeholder="ana@correo.com" /></div></div>
         <div class="field"><label for="mRole">Permiso</label><select id="mRole"><option value="vendedor">Vendedor — puede vender y consultar stock</option><option value="admin">Administrador — puede administrar stock y ventas</option></select></div>
         <div class="row" style="margin-top:.6rem"><button class="btn small" id="bAdd">Agregar al equipo</button></div>
-        <p class="mut">Por seguridad, solo el dueño del negocio puede agregar o quitar personas.</p>
+        <p class="mut">Por seguridad, solo el dueño del negocio puede agregar o quitar personas.</p></div>
+        <p class="mut" id="teamLocked" style="display:${canManageTeam ? 'none' : 'block'}">Solo el dueño puede invitar o quitar personas del equipo.</p>
         <h3 class="team-subtitle">Personas con acceso</h3>${teamList}`;
 
   app.innerHTML = shell(`<div class="bento">
@@ -777,6 +829,7 @@ async function vEquipo() {
       <div class="field"><label for="pinNew">PIN de este vendedor</label><div class="row"><input id="pinNew" inputmode="numeric" maxlength="12" placeholder="6 números" style="max-width:220px"/><button class="btn small" id="bPinSave">Guardar o cambiar PIN</button></div><small class="hint">El PIN queda guardado solamente en este dispositivo. Sirve para vender cuando se corta internet.</small></div>
     </div></div>`, 'equipo', { orgs: list, org: cur, email: (user as any)?.email });
   bindCommon(list, cur);
+  if (!canManageTeam) (document.getElementById('mManageTools') as HTMLElement | null)?.setAttribute('hidden', 'true');
   bindMyIdCopy();
   // Estado del PIN en este equipo
   try {
@@ -812,6 +865,7 @@ async function vEquipo() {
   const bA = document.getElementById('bAdd') as HTMLButtonElement | null;
   if (bA) bA.onclick = async () => {
     if (!cur) { toast('Primero creá un negocio'); return; }
+    if (!await ensureTeamAuth()) return;
     const memberId = (document.getElementById('mId') as HTMLInputElement).value.trim();
     if (memberId.length < 8) { toast('Revisá el ID del usuario'); return; }
     bA.disabled = true;
