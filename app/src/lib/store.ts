@@ -84,8 +84,8 @@ export async function listMembers(org_id: string): Promise<OrgMember[]> {
     const user = m.expand?.user ?? {};
     return {
       id: m.user,
-      name: user.name || user.email || 'Usuario del equipo',
-      email: user.email ?? '',
+      name: m.label_name || user.name || user.email || 'Usuario del equipo',
+      email: m.label_email || (user.email ?? ''),
       role: m.role ?? 'vendedor'
     };
   });
@@ -96,11 +96,17 @@ export async function createOrg(name: string) {
   if (!me) throw new Error('Sin sesión');
   const slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) + '-' + Date.now().toString(36);
   const org = await pb.collection('orgs').create({ name, slug, owner: me.id, members: [me.id], admins: [me.id], active: true });
-  await pb.collection('memberships').create({ org: org.id, user: me.id, role: 'dueno' });
+  try {
+    await pb.collection('memberships').create({ org: org.id, user: me.id, role: 'dueno' });
+  } catch (e) {
+    // No dejamos una organización huérfana si falla la membresía inicial.
+    await pb.collection('orgs').delete(org.id).catch(() => undefined);
+    throw new Error('No pude terminar de crear el negocio. Probá de nuevo.');
+  }
   return org;
 }
 
-export async function addMemberById(org_id: string, user_id: string, role: string) {
+export async function addMemberById(org_id: string, user_id: string, role: string, email = '', name = '') {
   const org = await pb.collection('orgs').getOne(org_id);
   const members: string[] = (org as any).members ?? [];
   const admins: string[] = (org as any).admins ?? [];
@@ -109,12 +115,13 @@ export async function addMemberById(org_id: string, user_id: string, role: strin
   if (nextMembers.length !== members.length || nextAdmins.length !== admins.length) {
     await pb.collection('orgs').update(org_id, { members: nextMembers, admins: nextAdmins });
   }
+  const details = { role, label_email: email.trim(), label_name: name.trim() };
   try {
     const membership = await pb.collection('memberships').getFirstListItem(`org="${org_id}" && user="${user_id}"`);
-    await pb.collection('memberships').update(membership.id, { role });
+    await pb.collection('memberships').update(membership.id, details);
   } catch (e) {
     if (!isNotFound(e)) throw e;
-    await pb.collection('memberships').create({ org: org_id, user: user_id, role });
+    await pb.collection('memberships').create({ org: org_id, user: user_id, ...details });
   }
 }
 
@@ -141,6 +148,11 @@ export async function pullProducts(org_id: string) {
     // Releemos dentro de la transacción: una edición local que ocurrió durante
     // la descarga no puede quedar sobreescrita por una versión cloud vieja.
     const localRows = await db.products.where('org_id').equals(org_id).toArray();
+    if (!rows.length && localRows.length) {
+      // Una respuesta vacía puede ser una regla de permisos o un fallo
+      // momentáneo. Nunca purguemos el stock local por eso.
+      return localRows.filter((p) => !p.deleted);
+    }
     const localById = new Map(localRows.map((p) => [p.id, p]));
     const remoteIds = new Set(rows.map((p: any) => p.id));
     const merged: LocalProduct[] = rows.map((p: any) => {
@@ -150,7 +162,8 @@ export async function pullProducts(org_id: string) {
 
     const localOnlyDirty = localRows.filter((p) => p.dirty && !remoteIds.has(p.id));
     const staleClean = localRows.filter((p) => !p.dirty && !remoteIds.has(p.id));
-    if (staleClean.length) await db.products.bulkDelete(staleClean.map((p) => p.id));
+    // Borrado lógico: queda recuperable y no se pierde por una descarga vacía.
+    if (staleClean.length) await db.products.bulkPut(staleClean.map((p) => ({ ...p, deleted: 1 })));
     const all = [...merged, ...localOnlyDirty];
     if (all.length) await db.products.bulkPut(all);
     return all.filter((p) => !p.deleted);
@@ -171,46 +184,51 @@ async function ensureProductRemote(local: LocalProduct): Promise<string | null> 
     }
   }
 
-  try {
-    await pb.collection('products').update(local.id, {
-      org: local.org_id, name: local.name, price: local.price, stock: local.stock,
-      min_stock: local.min_stock, category: local.category, active: true,
-      local_id: local.id
-    });
-    return local.id;
-  } catch (e) {
-    if (!isNotFound(e)) throw e;
-
-    // Si se perdió la respuesta de un create anterior, este filtro recupera
-    // el producto remoto en vez de crear otro.
-    let created: any = null;
+  // Los IDs locales son UUID; los de PocketBase son cortos. Así evitamos que
+  // un 400 por "id inválido" deje un producto nuevo sin poder crear.
+  if (/^[a-z0-9]{15}$/i.test(local.id)) {
     try {
-      created = await pb.collection('products').getFirstListItem(`org="${local.org_id}" && local_id="${local.id}"`);
-    } catch (existingError) {
-      if (!isNotFound(existingError)) throw existingError;
-      created = await pb.collection('products').create({
-        org: local.org_id, name: local.name || '(sin nombre)', price: local.price, stock: local.stock,
-        min_stock: local.min_stock, category: local.category, active: true, local_id: local.id
+      await pb.collection('products').update(local.id, {
+        org: local.org_id, name: local.name, price: local.price, stock: local.stock,
+        min_stock: local.min_stock, category: local.category, active: true,
+        local_id: local.id
+      });
+      return local.id;
+    } catch (e) {
+      if (!isNotFound(e)) throw e;
+    }
+  }
+
+  // Si se perdió la respuesta de un create anterior, este filtro recupera
+  // el producto remoto en vez de crear otro.
+  let created: any = null;
+  try {
+    created = await pb.collection('products').getFirstListItem(`org="${local.org_id}" && local_id="${local.id}"`);
+  } catch (existingError) {
+    if (!isNotFound(existingError)) throw existingError;
+    created = await pb.collection('products').create({
+      org: local.org_id, name: local.name || '(sin nombre)', price: local.price, stock: local.stock,
+      min_stock: local.min_stock, category: local.category, active: true, local_id: local.id
+    });
+  }
+
+  // Reconciliamos el ID local con el ID de PocketBase sin perder una edición
+  // que haya ocurrido mientras esperábamos la respuesta del servidor.
+  await db.transaction('rw', db.products, async () => {
+    const latest = await db.products.get(local.id);
+    await db.products.delete(local.id);
+    if (latest) {
+      const changedWhileUploading = latest.updatedAt > local.updatedAt;
+      await db.products.put({
+        ...latest,
+        id: created.id,
+        dirty: changedWhileUploading ? 1 : 0,
+        lastError: changedWhileUploading ? latest.lastError : '',
+        updatedAt: Date.now()
       });
     }
-
-    // Reconciliamos el ID local con el ID de PocketBase sin perder una edición
-    // que haya ocurrido mientras esperábamos la respuesta del servidor.
-    await db.transaction('rw', db.products, async () => {
-      const latest = await db.products.get(local.id);
-      await db.products.delete(local.id);
-      if (latest) {
-        const changedWhileUploading = latest.updatedAt > local.updatedAt;
-        await db.products.put({
-          ...latest,
-          id: created.id,
-          dirty: changedWhileUploading ? 1 : 0,
-          updatedAt: Date.now()
-        });
-      }
-    });
-    return created.id;
-  }
+  });
+  return created.id;
 }
 
 const productSyncLocks = new Map<string, Promise<Map<string, string>>>();
@@ -238,7 +256,7 @@ async function pushDirtyProductsNow(org_id: string): Promise<Map<string, string>
     if (remoteId) idMap.set(local.id, remoteId);
     const after = await db.products.get(local.id);
     if (remoteId === local.id && after?.dirty === 1 && after.updatedAt === local.updatedAt) {
-      await db.products.update(local.id, { dirty: 0 });
+      await db.products.update(local.id, { dirty: 0, lastError: '' });
     }
   }
   return idMap;
@@ -249,7 +267,12 @@ export async function saveProductLocal(p: LocalProduct) {
   await db.products.put(p);
   // Si hay red, intentamos subir; si falla, queda dirty y se reintenta después.
   if (navigator.onLine && isCloudConfigured() && pb.authStore.isValid) {
-    await pushDirtyProducts(p.org_id).catch(() => undefined);
+    try {
+      await pushDirtyProducts(p.org_id);
+    } catch (e) {
+      const current = await db.products.get(p.id);
+      if (current) await db.products.update(p.id, { lastError: errorText(e) });
+    }
   }
 }
 
@@ -261,7 +284,12 @@ export async function deleteProductLocal(id: string) {
   p.updatedAt = Date.now();
   await db.products.put(p);
   if (navigator.onLine && isCloudConfigured() && pb.authStore.isValid) {
-    await pushDirtyProducts(p.org_id).catch(() => undefined);
+    try {
+      await pushDirtyProducts(p.org_id);
+    } catch (e) {
+      const current = await db.products.get(id);
+      if (current) await db.products.update(id, { lastError: errorText(e) });
+    }
   }
 }
 
@@ -298,7 +326,7 @@ export async function createSaleOffline(org_id: string, items: OutboxSale['items
     await db.outbox.add(sale);
   });
 
-  void syncOutbox(org_id);
+  void syncOutbox(org_id).catch(() => undefined);
   return sale;
 }
 
@@ -351,8 +379,14 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
         } else {
           const local = await db.products.get(item.product_id);
           if (local && !local.deleted) {
-            const ensured = await ensureProductRemote(local);
-            if (ensured) { item.product_id = ensured; await db.outbox.put(s); }
+            try {
+              const ensured = await ensureProductRemote(local);
+              if (ensured) { item.product_id = ensured; await db.outbox.put(s); }
+            } catch {
+              // Un producto problemático no debe bloquear la venta entera.
+              item.product_id = '';
+              await db.outbox.put(s);
+            }
           }
         }
       }

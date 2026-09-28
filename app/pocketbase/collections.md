@@ -12,8 +12,9 @@ aplicar estas reglas en el servidor:
 - `memberships`: cada usuario ve su membresía; solo el dueño administra el equipo.
 - `products`, `clients`, `sales`, `stock_moves` y `tickets`: acceso únicamente
   a registros cuyo `org` tiene al usuario como dueño o miembro.
-- `sale_items`: acceso únicamente si la venta pertenece a una organización
-  permitida.
+- `sale_items`: acceso únicamente si la venta pertenece a una organización permitida.
+- Los vendedores pueden crear, consultar y actualizar stock.
+- Los administradores pueden eliminar productos, ventas y movimientos.
 - Para crear una organización, `owner` debe ser el usuario autenticado.
 
 ## 1. orgs (base)
@@ -31,6 +32,8 @@ aplicar estas reglas en el servidor:
 - `org`: relation → `orgs`, required, cascade delete
 - `user`: relation → `users`, required
 - `role`: select → `dueno`, `admin`, `vendedor`
+- `label_name`: text — nombre visible para el dueño
+- `label_email`: text — email visible para el dueño
 
 ## 3. products (base)
 

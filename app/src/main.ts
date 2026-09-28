@@ -13,6 +13,10 @@ const fmt = (n: number) => '$' + Number(n || 0).toLocaleString('es-AR');
 const getOrg = () => localStorage.getItem('zt_org') ?? '';
 const setOrg = (id: string) => localStorage.setItem('zt_org', id);
 const esc = (s: string) => (s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const withTimeout = <T,>(promise: Promise<T>, ms = 12000): Promise<T> => Promise.race([
+  promise,
+  new Promise<T>((_, reject) => setTimeout(() => reject(new Error('La nube tardó demasiado. Sigo con los datos locales.')), ms))
+]);
 
 function toast(msg: string) {
   document.querySelectorAll('.toast').forEach((t) => t.remove());
@@ -147,6 +151,11 @@ function promptPin(uid: string, email: string, org: string): Promise<boolean> {
 }
 
 async function requireUser() {
+  // Modo local explícito: permite seguir vendiendo aunque la nube esté caída.
+  if (sessionStorage.getItem('zt_force_local')) {
+    const local = getLocalSession();
+    if (local) return { id: local.uid, email: local.email };
+  }
   // Offline: vale la sesión local con PIN (la caja no se frena nunca)
   if (!navigator.onLine) {
     const s = getLocalSession();
@@ -240,6 +249,7 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
     };
     return;
   }
+  const canContinueLocal = !!getLocalSession();
   app.innerHTML = `<div class="auth-wrap"><div class="auth-card">
     <div class="auth-logo"><i>Z</i><div><b>ZT Gestión</b><small>San Vicente · Misiones</small></div></div>
     <p class="auth-sub">${mode === 'in' ? 'Entrá a tu negocio. Tus ventas te esperan.' : 'Creá tu cuenta gratis y empezá a vender hoy.'}</p>
@@ -260,11 +270,17 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
           ? '<button class="btn auth-go" id="bGo">Entrar a mi negocio →</button>'
           : '<button class="btn auth-go" id="bGo">Crear mi cuenta gratis</button>'}
       </div>
-      <p class="auth-foot">Funciona sin internet · Tus datos son solo de tu negocio</p>` : `
+      <p class="auth-foot">Funciona sin internet · Tus datos son solo de tu negocio</p>
+      ${canContinueLocal && mode === 'in' ? '<div class="row" style="margin-top:.7rem"><button class="btn ghost" id="bOfflineContinue">Continuar sin conexión</button></div>' : ''}` : `
       <p>Sin nube: creá <b>app/.env</b> con <b>VITE_PB_URL=https://app.zonatecno.uno</b> y recargá. Mientras tanto:</p>
       <div class="row"><a class="btn" href="#/panel">Usar en modo local offline</a></div>`}
   </div></div>`;
   if (!isCloudConfigured()) return;
+  (document.getElementById('bOfflineContinue') as HTMLButtonElement | null)?.addEventListener('click', () => {
+    sessionStorage.setItem('zt_force_local', '1');
+    location.hash = '#/panel';
+    router();
+  });
   const showErr = (m: string) => {
     const box = document.getElementById('loginErr') as HTMLElement;
     box.style.display = 'block'; box.textContent = m;
@@ -292,6 +308,7 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
         const me: any = await getUser().catch(() => null);
         if (me) {
           setLocalSession({ uid: me.id, email: me.email ?? em, org: getOrg() });
+          sessionStorage.removeItem('zt_force_local');
         }
         toast('¡Hola de nuevo!');
         location.hash = '#/panel'; router();
@@ -315,6 +332,7 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
       const me: any = await getUser().catch(() => null);
       if (me) {
         setLocalSession({ uid: me.id, email: me.email ?? em, org: getOrg() });
+        sessionStorage.removeItem('zt_force_local');
       }
       toast('Cuenta lista, entrando…');
       location.hash = '#/panel'; router();
@@ -352,20 +370,23 @@ async function vPanel() {
     </div></div>`, 'panel', { orgs: list, org: cur, email: (user as any)?.email });
     bindCommon(list, cur);
     (document.getElementById('bOrg') as HTMLButtonElement).onclick = async () => {
+      const input = document.getElementById('orgName') as HTMLInputElement;
+      const button = document.getElementById('bOrg') as HTMLButtonElement;
+      if (input.value.trim().length < 2) { toast('Escribí un nombre de al menos 2 caracteres'); return; }
+      button.disabled = true;
       try {
-        const o = await createOrg((document.getElementById('orgName') as HTMLInputElement).value.trim());
+        const o = await createOrg(input.value.trim());
         setOrg(o.id); toast('Negocio creado'); router();
-      } catch (e: any) { toast(e.message); }
+      } catch (e: any) { button.disabled = false; toast(e.message); }
     };
     return;
   }
   const org = cur;
-  sessionStorage.removeItem('zt_force_local'); // la nube anda: salgo del modo local forzado
   const orgName = list.find((o) => o.id === org)?.name ?? org.slice(0, 8);
   // Pull nube si hay conexión (no rompe si falla: seguimos con local)
   let syncMsg = '';
   if (navigator.onLine && isCloudConfigured()) {
-    try { const r = await syncOutbox(org); await pullProducts(org); if (r.synced) syncMsg = `${r.synced} ventas subidas`; else if (r.pending) syncMsg = '1 venta sigue pendiente'; } catch (e: any) { syncMsg = e?.message ?? 'nube no disponible, sigo offline'; }
+    try { const r = await withTimeout(syncOutbox(org)); await withTimeout(pullProducts(org)); if (r.synced) syncMsg = `${r.synced} ventas subidas`; else if (r.pending) syncMsg = `${r.pending} venta${r.pending === 1 ? '' : 's'} pendiente${r.pending === 1 ? '' : 's'}`; } catch (e: any) { syncMsg = e?.message ?? 'nube no disponible, sigo offline'; }
   }
   const prods = (await db.products.where('org_id').equals(org).toArray()).filter((p) => !p.deleted);
   const pend = await db.outbox.where('org_id').equals(org).toArray();
@@ -373,7 +394,7 @@ async function vPanel() {
   const pendError = pend.find((s) => s.lastError)?.lastError ?? '';
   const low = prods.filter((p) => p.stock <= p.min_stock);
   const stockVal = prods.reduce((a, p) => a + p.price * p.stock, 0);
-  const hist = await salesHistoryCloud(org, 50).catch(() => []);
+  const hist = await withTimeout(salesHistoryCloud(org, 50)).catch(() => []);
   const today = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'short' });
   const dayKey = (value: unknown) => {
     const d = new Date(value as string);
@@ -432,8 +453,8 @@ async function vPanel() {
   (document.getElementById('bSync') as HTMLButtonElement).onclick = async () => {
     (document.getElementById('syncMsg') as HTMLElement).textContent = 'sincronizando…';
     try {
-      const r = await syncOutbox(org);
-      await pullProducts(org);
+      const r = await withTimeout(syncOutbox(org));
+      await withTimeout(pullProducts(org));
       toast(r.pending ? `${r.synced} subidas, ${r.pending} quedan` : 'Todo sincronizado');
       router();
     } catch (e: any) { (document.getElementById('syncMsg') as HTMLElement).textContent = e.message; }
@@ -447,7 +468,7 @@ async function vProductos(q = '') {
   if (cloudError || !cur) { location.hash = '#/panel'; return; }
   const org = cur;
   let rows = (await db.products.where('org_id').equals(org).toArray()).filter((p) => !p.deleted);
-  if (!rows.length && navigator.onLine) { try { rows = await pullProducts(org); } catch {} }
+  if (!rows.length && navigator.onLine) { try { rows = await withTimeout(pullProducts(org)); } catch {} }
   if (!rows.length && !isCloudConfigured()) {
     for (const s of [{ name: 'Kit Salvavidas', price: 25000, stock: 25 }, { name: 'Galaxy A14 128GB', price: 329999, stock: 6 }, { name: 'Tinta Epson x4', price: 34999, stock: 18 }]) {
       const p = newLocalProduct(org); p.name = s.name; p.price = s.price; p.stock = s.stock; p.dirty = 1; await db.products.add(p);
@@ -462,7 +483,7 @@ async function vProductos(q = '') {
     <button class="btn small" id="bNew">+ Producto</button>
   </div>
   <div style="margin-top:.7rem"><table><tr><th>Producto</th><th>Precio</th><th>Stock</th><th></th></tr>
-  <tbody id="productRows">${view.map((p) => `<tr data-name="${esc(p.name.toLowerCase())}"><td><b>${esc(p.name || '(sin nombre)')}</b>${p.dirty ? ' <span class="pill warn">sin subir</span>' : ''}<br/><span class="mut">${esc(p.category)}</span></td>
+  <tbody id="productRows">${view.map((p) => `<tr data-name="${esc(p.name.toLowerCase())}"><td><b>${esc(p.name || '(sin nombre)')}</b>${p.dirty ? ' <span class="pill warn">sin subir</span>' : ''}${p.lastError ? ' <span class="pill bad">revisar</span>' : ''}<br/><span class="mut">${esc(p.category)}${p.lastError ? ' · ' + esc(p.lastError) : ''}</span></td>
     <td>${fmt(p.price)}</td><td class="${p.stock <= p.min_stock ? 'low' : ''}">${p.stock}</td>
     <td style="white-space:nowrap"><button class="btn ghost small" data-edit="${p.id}">Editar</button> <button class="btn ghost small" data-del="${p.id}">Borrar</button></td></tr>`).join('') || '<tr><td colspan="4" class="mut">Sin productos. Creá el primero con + Producto.</td></tr>'}
   </tbody></table></div></div>
@@ -595,7 +616,12 @@ async function vVentas() {
 // ---------- Equipo ----------
 async function vEquipo() {
   const user = await requireUser();
-  const { list, cur } = await loadOrgs();
+  const { list, cur, cloudError } = await loadOrgs();
+  if (cloudError) {
+    app.innerHTML = shell(`<div class="bento"><div class="card span12"><h2>Equipo no disponible</h2><p class="pill bad">${esc(cloudError)}</p><p class="mut">Revisá la nube o seguí usando el modo local desde el login.</p><div class="row"><a class="btn small" href="#/panel">Ir al panel</a></div></div></div>`, 'equipo', { orgs: list, org: cur, email: (user as any)?.email });
+    bindCommon(list, cur);
+    return;
+  }
   const currentName = list.find((o) => o.id === cur)?.name ?? (cur ? 'tu negocio' : '');
   const members = cur && isCloudConfigured() ? await listMembers(cur).catch(() => []) : [];
   const roleLabel = (role: string) => role === 'dueno' ? 'Dueño' : role === 'admin' ? 'Administrador' : 'Vendedor';
@@ -607,12 +633,14 @@ async function vEquipo() {
     : !isCloudConfigured()
       ? '<p class="mut">Estás en modo local. El equipo multiusuario necesita la nube configurada.</p>'
       : `<p class="mut">Negocio: <b>${esc(currentName)}</b> · Sesión: ${esc((user as any)?.email ?? '')}</p>
+        <div class="my-id"><small>Tu ID para que te inviten</small><code id="myId">${esc((user as any)?.id ?? '')}</code><button class="btn ghost small" id="bCopyId">Copiar</button></div>
         <ol class="team-steps">
           <li><b>1.</b> Pedile al vendedor que cree su cuenta desde <b>Crear cuenta</b>.</li>
           <li><b>2.</b> Que te pase su <b>ID de usuario</b> (no es su email).</li>
           <li><b>3.</b> Pegalo acá y elegí qué puede hacer.</li>
         </ol>
         <div class="field"><label for="mId">ID del usuario</label><input id="mId" autocomplete="off" placeholder="Ej: 8fj2k1abcde" /><small class="hint">Lo encontrás en PocketBase → usuarios, en la ficha del vendedor.</small></div>
+        <div class="grid2"><div class="field"><label for="mName">Nombre (opcional)</label><input id="mName" placeholder="Ej: Ana" /></div><div class="field"><label for="mEmail">Email (opcional)</label><input id="mEmail" type="email" placeholder="ana@correo.com" /></div></div>
         <div class="field"><label for="mRole">Permiso</label><select id="mRole"><option value="vendedor">Vendedor — puede vender y consultar stock</option><option value="admin">Administrador — puede administrar stock y ventas</option></select></div>
         <div class="row" style="margin-top:.6rem"><button class="btn small" id="bAdd">Agregar al equipo</button></div>
         <p class="mut">Por seguridad, solo el dueño del negocio puede agregar o quitar personas.</p>
@@ -628,6 +656,11 @@ async function vEquipo() {
       <div class="field"><label for="pinNew">PIN de este vendedor</label><div class="row"><input id="pinNew" inputmode="numeric" maxlength="12" placeholder="6 números" style="max-width:220px"/><button class="btn small" id="bPinSave">Guardar o cambiar PIN</button></div><small class="hint">El PIN queda guardado solamente en este dispositivo. Sirve para vender cuando se corta internet.</small></div>
     </div></div>`, 'equipo', { orgs: list, org: cur, email: (user as any)?.email });
   bindCommon(list, cur);
+  (document.getElementById('bCopyId') as HTMLButtonElement | null)?.addEventListener('click', async () => {
+    const id = (document.getElementById('myId') as HTMLElement | null)?.textContent ?? '';
+    try { await navigator.clipboard.writeText(id); toast('ID copiado'); }
+    catch { toast(id); }
+  });
   // Estado del PIN en este equipo
   try {
     const uid = (user as any)?.id;
@@ -666,8 +699,16 @@ async function vEquipo() {
     if (memberId.length < 8) { toast('Revisá el ID del usuario'); return; }
     bA.disabled = true;
     try {
-      await addMemberById(cur, memberId, (document.getElementById('mRole') as HTMLSelectElement).value);
+      await addMemberById(
+        cur,
+        memberId,
+        (document.getElementById('mRole') as HTMLSelectElement).value,
+        (document.getElementById('mEmail') as HTMLInputElement | null)?.value ?? '',
+        (document.getElementById('mName') as HTMLInputElement | null)?.value ?? ''
+      );
       (document.getElementById('mId') as HTMLInputElement).value = '';
+      (document.getElementById('mName') as HTMLInputElement | null)!.value = '';
+      (document.getElementById('mEmail') as HTMLInputElement | null)!.value = '';
       toast('Persona agregada al equipo');
     } catch (e: any) { toast(e.message); }
     finally { bA.disabled = false; }
@@ -686,6 +727,7 @@ export async function router() {
   } catch (e: any) {
     if (String(e?.message) === 'login') { location.hash = '#/login'; await vLogin('in'); return; }
     app.innerHTML = shell(`<div class="card"><h2>Algo falló</h2><p class="mut">${esc(e?.message ?? String(e))}</p><div class="row"><a class="btn small" href="#/panel">Reintentar</a></div></div>`, 'panel');
+    bindCommon([], '');
   }
 }
 
@@ -711,7 +753,7 @@ function refreshNet() {
         }
         const o = getOrg();
         if (o) {
-          try { await syncOutbox(o); await pullProducts(o); } catch { /* seguimos local */ }
+          try { await withTimeout(syncOutbox(o)); await withTimeout(pullProducts(o)); } catch { /* seguimos local */ }
         }
         await router();
       })();

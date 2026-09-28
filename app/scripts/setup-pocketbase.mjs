@@ -17,13 +17,13 @@ const R = {
     deleteRule: 'owner = @request.auth.id',
   },
   memberships: {
-    listRule: 'user = @request.auth.id || org.owner = @request.auth.id',
-    viewRule: 'user = @request.auth.id || org.owner = @request.auth.id',
+    listRule: 'user = @request.auth.id || org.owner = @request.auth.id || org.admins.id ?= @request.auth.id',
+    viewRule: 'user = @request.auth.id || org.owner = @request.auth.id || org.admins.id ?= @request.auth.id',
     createRule: 'org.owner = @request.auth.id',
     updateRule: 'org.owner = @request.auth.id',
     deleteRule: 'org.owner = @request.auth.id',
   },
-  products: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ADMIN, deleteRule: ADMIN },
+  products: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
   clients: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
   sales: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ADMIN, deleteRule: ADMIN },
   sale_items: { listRule: SALE, viewRule: SALE, createRule: SALE, updateRule: SALE_ADMIN, deleteRule: SALE_ADMIN },
@@ -54,7 +54,7 @@ function* defs(ids) {
   // Las relaciones se generan en orden para que una instalación limpia pueda
   // resolver el ID de cada colección antes de crear la siguiente.
   yield { name: 'orgs', type: 'base', fields: [T('name', true), T('slug'), Rel('owner', ids.users, false, { maxSelect: 1 }), Rel('members', ids.users), Rel('admins', ids.users), T('plan'), B('active')] };
-  yield { name: 'memberships', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1, cascadeDelete: true }), Rel('user', ids.users, true, { maxSelect: 1 }), S('role', ['dueno', 'admin', 'vendedor'])] };
+  yield { name: 'memberships', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1, cascadeDelete: true }), Rel('user', ids.users, true, { maxSelect: 1 }), S('role', ['dueno', 'admin', 'vendedor']), T('label_name'), T('label_email')] };
   yield { name: 'products', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), T('name', true), N('price'), N('stock'), N('min_stock'), T('category'), B('active'), T('local_id')] };
   yield { name: 'clients', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), T('name', true), T('phone'), T('note')] };
   yield { name: 'sales', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), N('total'), T('pay_method'), T('channel'), T('created_by'), T('local_id'), T('occurred_at')] };

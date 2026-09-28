@@ -10,6 +10,7 @@ export interface LocalProduct {
   category: string;
   dirty?: number; // 1 = pendiente de subir
   deleted?: number; // 1 = borrado lógicamente en la nube
+  lastError?: string; // último error al intentar subir este producto
   updatedAt: number;
 }
 

@@ -80,6 +80,9 @@ th { color: var(--mut); font-size: .75rem; text-transform: uppercase; letter-spa
 .field label { font-size: .78rem; font-weight: 700; color: var(--mut); text-transform: uppercase; letter-spacing: .05em; }
 .field input { padding: .8rem .9rem; font-size: 1rem; border-radius: 14px; }
 .field .hint { color: var(--mut2); font-size: .78rem; line-height: 1.4; }
+.my-id { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; margin: .7rem 0; padding: .55rem .65rem; border: 1px dashed var(--line2); border-radius: 12px; background: rgba(255,255,255,.025); }
+.my-id small { color: var(--mut); width: 100%; font-size: .74rem; }
+.my-id code { flex: 1; color: #7dffb0; font-size: .82rem; overflow: hidden; text-overflow: ellipsis; }
 .team-steps { display: grid; gap: .45rem; margin: .9rem 0 1rem; padding-left: 1.2rem; color: var(--mut); font-size: .88rem; }
 .team-steps li { padding-left: .15rem; }
 .team-steps b { color: var(--grn); }
