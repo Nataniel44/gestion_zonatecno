@@ -45,6 +45,7 @@ h3 { font-size: .92rem; margin: 0 0 .5rem; color: var(--mut); text-transform: up
 .kpi { font-size: 1.7rem; font-weight: 900; letter-spacing: -.02em; margin: .2rem 0; }
 .kpi small { font-size: .85rem; color: var(--mut); font-weight: 600; }
 .mut { color: var(--mut); font-size: .86rem; }
+.sync-error { color: #ffb3c2; font-size: .8rem; line-height: 1.35; }
 .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 input, select { width: 100%; background: #080f18; border: 1px solid var(--line); color: var(--txt); border-radius: 12px; padding: .65rem .75rem; font: inherit; }
 input:focus, select:focus { outline: none; border-color: var(--grn); }

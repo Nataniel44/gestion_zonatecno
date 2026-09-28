@@ -380,7 +380,10 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
       ok++;
     } catch (e: any) {
       s.attempts = (s.attempts ?? 0) + 1;
-      s.lastError = e?.message ?? String(e);
+      const rawError = e?.response?.data?.message ?? e?.data?.message ?? e?.message ?? String(e);
+      s.lastError = /local_id|occurred_at|unknown field|field.*not found/i.test(String(rawError))
+        ? 'El servidor necesita el esquema nuevo de sincronización. Ejecutá setup:pocketbase en el VPS.'
+        : String(rawError);
       await db.outbox.put(s);
     }
   }

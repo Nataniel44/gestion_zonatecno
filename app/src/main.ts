@@ -365,11 +365,12 @@ async function vPanel() {
   // Pull nube si hay conexión (no rompe si falla: seguimos con local)
   let syncMsg = '';
   if (navigator.onLine && isCloudConfigured()) {
-    try { const r = await syncOutbox(org); await pullProducts(org); if (r.synced) syncMsg = `${r.synced} ventas subidas`; } catch { syncMsg = 'nube no disponible, sigo offline'; }
+    try { const r = await syncOutbox(org); await pullProducts(org); if (r.synced) syncMsg = `${r.synced} ventas subidas`; else if (r.pending) syncMsg = '1 venta sigue pendiente'; } catch (e: any) { syncMsg = e?.message ?? 'nube no disponible, sigo offline'; }
   }
   const prods = (await db.products.where('org_id').equals(org).toArray()).filter((p) => !p.deleted);
   const pend = await db.outbox.where('org_id').equals(org).toArray();
   const pendTotal = pend.reduce((a, s) => a + s.total, 0);
+  const pendError = pend.find((s) => s.lastError)?.lastError ?? '';
   const low = prods.filter((p) => p.stock <= p.min_stock);
   const stockVal = prods.reduce((a, p) => a + p.price * p.stock, 0);
   const hist = await salesHistoryCloud(org, 50).catch(() => []);
@@ -402,7 +403,7 @@ async function vPanel() {
   app.innerHTML = shell(`
   <p class="mut" style="margin:.2rem 0 1rem">${esc(orgName)} · ${today}</p>
   <div class="bento">
-    <div class="card span3"><h3>Ventas por subir</h3><div class="kpi">${pend.length} <small>· ${fmt(pendTotal)}</small></div><p class="mut">Se suben solas con internet.</p><div class="row"><button class="btn small" id="bSync">Sincronizar</button><a class="btn ghost small" href="#/ventas">Vender</a><span class="mut" id="syncMsg"></span></div></div>
+    <div class="card span3"><h3>Ventas por subir</h3><div class="kpi">${pend.length} <small>· ${fmt(pendTotal)}</small></div><p class="${pendError ? 'sync-error' : 'mut'}">${pendError ? `No se pudo subir: ${esc(pendError)}` : 'Se suben solas con internet.'}</p><div class="row"><button class="btn small" id="bSync">Sincronizar</button><a class="btn ghost small" href="#/ventas">Vender</a><span class="mut" id="syncMsg"></span></div></div>
     <div class="card span3"><h3>Productos</h3><div class="kpi">${prods.length}</div><p class="mut">Valor stock: ${fmt(stockVal)}</p><div class="row"><a class="btn ghost small" href="#/productos">Ver stock</a></div></div>
     <div class="card span3"><h3>Stock bajo</h3><div class="kpi" style="color:${low.length ? '#ff8fa3' : 'inherit'}">${low.length}</div><p class="mut">${low.length ? 'Hay que reponer' : 'Todo OK'}</p><div class="row"><a class="btn ghost small" href="#/productos">Reponer</a></div></div>
     <div class="card span3"><h3>Tu app</h3><div class="kpi">⬇</div><p class="mut">Instalala en celu o PC. Anda sin internet.</p><div class="row"><button class="btn small" data-install>Descargar</button><button class="btn ghost small" id="bSetupPin">PIN sin internet</button></div></div>
