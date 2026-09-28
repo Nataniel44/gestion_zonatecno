@@ -27,6 +27,17 @@ function toast(msg: string) {
   setTimeout(() => t.remove(), 3200);
 }
 
+const getAccountType = () => (localStorage.getItem('zt_account_type') === 'empleado' ? 'empleado' : 'negocio');
+const setAccountType = (type: string) => localStorage.setItem('zt_account_type', type === 'empleado' ? 'empleado' : 'negocio');
+const myIdBlock = (user: any) => (user?.id ? `<div class="my-id"><small>Tu ID para que te inviten</small><code id="myId">${esc(user.id)}</code><button class="btn ghost small" id="bCopyId">Copiar</button></div>` : '');
+function bindMyIdCopy() {
+  (document.getElementById('bCopyId') as HTMLButtonElement | null)?.addEventListener('click', async () => {
+    const id = (document.getElementById('myId') as HTMLElement | null)?.textContent ?? '';
+    try { await navigator.clipboard.writeText(id); toast('ID copiado'); }
+    catch { toast(id); }
+  });
+}
+
 // ---- Instalar app (PWA) ----
 let deferredPrompt: any = null;
 addEventListener('beforeinstallprompt', (e: Event) => {
@@ -262,6 +273,7 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
         <a href="#/registro" class="${mode === 'up' ? 'on' : ''}">Crear cuenta</a>
       </div>
       <div style="display:flex;flex-direction:column;gap:.7rem">
+        <div class="field"><label>Tipo de cuenta</label><select id="accountType"><option value="negocio" ${getAccountType() === 'negocio' ? 'selected' : ''}>Negocio — quiero vender y gestionar mi stock</option><option value="empleado" ${getAccountType() === 'empleado' ? 'selected' : ''}>Empleado — espero que me agreguen a un negocio</option></select></div>
         <div class="field"><label>Email</label><input id="em" placeholder="vos@tunegocio.com" autocomplete="username" /></div>
         ${mode === 'up' ? '<div class="field"><label>WhatsApp</label><input id="ph" placeholder="3755 12-3456" autocomplete="tel" inputmode="tel" /></div>' : ''}
         <div class="field"><label>Contraseña</label>
@@ -304,6 +316,7 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
     if (!em.includes('@')) { showErr('Revisá el email, le falta el @'); return; }
     if (pw.length < 8) { showErr('La contraseña necesita 8 caracteres como mínimo'); return; }
     if (!navigator.onLine) { showErr('Sin internet no puedo verificar tu cuenta. Conectate una vez para entrar; después seguís trabajando offline.'); return; }
+    setAccountType((document.getElementById('accountType') as HTMLSelectElement).value);
     if (mode === 'in') {
       busy(true, '');
       try {
@@ -367,12 +380,16 @@ async function vPanel() {
     return;
   }
   if (!cur) {
+    const isEmployee = getAccountType() === 'empleado';
     app.innerHTML = shell(`<div class="bento"><div class="card span12">
-      <h2>Creá tu negocio para empezar</h2><p class="mut">Cada negocio tiene su stock, ventas y equipo separados.</p>
-      <div class="row"><input id="orgName" placeholder="Ej: Kiosco El Centro" style="max-width:300px"/><button class="btn" id="bOrg">Crear negocio</button></div>
+      <h2>${isEmployee ? 'Tu cuenta está lista' : 'Creá tu negocio para empezar'}</h2>
+      <p class="mut">${isEmployee ? 'Cuando el dueño de un negocio te agregue, vas a ver su stock y podés vender. Por ahora no tenés un negocio asignado.' : 'Cada negocio tiene su stock, ventas y equipo separados.'}</p>
+      ${isEmployee ? myIdBlock(user) + '<p class="hint">Mandá este ID al dueño del negocio. Él lo pega en Equipo para agregarte.</p>' : '<div class="field"><label for="orgName">Nombre del negocio</label><div class="row"><input id="orgName" placeholder="Ej: Kiosco El Centro" style="max-width:300px"/><button class="btn" id="bOrg">Crear negocio</button></div></div>'}
     </div></div>`, 'panel', { orgs: list, org: cur, email: (user as any)?.email });
     bindCommon(list, cur);
-    (document.getElementById('bOrg') as HTMLButtonElement).onclick = async () => {
+    bindMyIdCopy();
+    const bOrg = document.getElementById('bOrg') as HTMLButtonElement | null;
+    if (bOrg) bOrg.onclick = async () => {
       const input = document.getElementById('orgName') as HTMLInputElement;
       const button = document.getElementById('bOrg') as HTMLButtonElement;
       if (input.value.trim().length < 2) { toast('Escribí un nombre de al menos 2 caracteres'); return; }
@@ -708,17 +725,19 @@ async function vEquipo() {
     ? `<div class="team-list">${members.map((m) => `<div class="team-row"><i class="team-avatar">${esc((m.name || '?').charAt(0).toUpperCase())}</i><div><b>${esc(m.name)}</b><small>${esc(m.email || m.id)}</small></div><span class="role-tag ${m.role === 'vendedor' ? 'seller' : 'admin'}">${roleLabel(m.role)}</span></div>`).join('')}</div>`
     : '<p class="mut">Todavía no hay personas cargadas en este negocio.</p>';
   const teamContent = !cur
-    ? '<p class="mut">Primero creá un negocio. Después vas a poder invitar vendedores y administradores.</p><a class="btn small" href="#/panel">Ir al panel</a>'
+    ? (getAccountType() === 'empleado'
+      ? `<p class="mut">Tu cuenta está esperando que un dueño te agregue a un negocio.</p>${myIdBlock(user)}<p class="hint">Mandá este ID al dueño. Él lo pega en Equipo para agregarte.</p>`
+      : '<p class="mut">Primero creá un negocio. Después vas a poder invitar vendedores y administradores.</p><a class="btn small" href="#/panel">Ir al panel</a>')
     : !isCloudConfigured()
       ? '<p class="mut">Estás en modo local. El equipo multiusuario necesita la nube configurada.</p>'
       : `<p class="mut">Negocio: <b>${esc(currentName)}</b> · Sesión: ${esc((user as any)?.email ?? '')}</p>
-        <div class="my-id"><small>Tu ID para que te inviten</small><code id="myId">${esc((user as any)?.id ?? '')}</code><button class="btn ghost small" id="bCopyId">Copiar</button></div>
+        ${myIdBlock(user)}
         <ol class="team-steps">
-          <li><b>1.</b> Pedile al vendedor que cree su cuenta desde <b>Crear cuenta</b>.</li>
-          <li><b>2.</b> Que te pase su <b>ID de usuario</b> (no es su email).</li>
+          <li><b>1.</b> Pedile al vendedor que elija <b>Empleado</b> al crear su cuenta.</li>
+          <li><b>2.</b> Que te copie su ID desde <b>Equipo → Mi ID</b>.</li>
           <li><b>3.</b> Pegalo acá y elegí qué puede hacer.</li>
         </ol>
-        <div class="field"><label for="mId">ID del usuario</label><input id="mId" autocomplete="off" placeholder="Ej: 8fj2k1abcde" /><small class="hint">Lo encontrás en PocketBase → usuarios, en la ficha del vendedor.</small></div>
+        <div class="field"><label for="mId">ID del usuario</label><input id="mId" autocomplete="off" placeholder="Ej: 8fj2k1abcde" /><small class="hint">No es el email: es el identificador que aparece en la cuenta del vendedor.</small></div>
         <div class="grid2"><div class="field"><label for="mName">Nombre (opcional)</label><input id="mName" placeholder="Ej: Ana" /></div><div class="field"><label for="mEmail">Email (opcional)</label><input id="mEmail" type="email" placeholder="ana@correo.com" /></div></div>
         <div class="field"><label for="mRole">Permiso</label><select id="mRole"><option value="vendedor">Vendedor — puede vender y consultar stock</option><option value="admin">Administrador — puede administrar stock y ventas</option></select></div>
         <div class="row" style="margin-top:.6rem"><button class="btn small" id="bAdd">Agregar al equipo</button></div>
@@ -735,11 +754,7 @@ async function vEquipo() {
       <div class="field"><label for="pinNew">PIN de este vendedor</label><div class="row"><input id="pinNew" inputmode="numeric" maxlength="12" placeholder="6 números" style="max-width:220px"/><button class="btn small" id="bPinSave">Guardar o cambiar PIN</button></div><small class="hint">El PIN queda guardado solamente en este dispositivo. Sirve para vender cuando se corta internet.</small></div>
     </div></div>`, 'equipo', { orgs: list, org: cur, email: (user as any)?.email });
   bindCommon(list, cur);
-  (document.getElementById('bCopyId') as HTMLButtonElement | null)?.addEventListener('click', async () => {
-    const id = (document.getElementById('myId') as HTMLElement | null)?.textContent ?? '';
-    try { await navigator.clipboard.writeText(id); toast('ID copiado'); }
-    catch { toast(id); }
-  });
+  bindMyIdCopy();
   // Estado del PIN en este equipo
   try {
     const uid = (user as any)?.id;
