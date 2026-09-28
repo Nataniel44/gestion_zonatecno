@@ -403,7 +403,7 @@ async function vPanel() {
   app.innerHTML = shell(`
   <p class="mut" style="margin:.2rem 0 1rem">${esc(orgName)} · ${today}</p>
   <div class="bento">
-    <div class="card span3"><h3>Ventas por subir</h3><div class="kpi">${pend.length} <small>· ${fmt(pendTotal)}</small></div><p class="${pendError ? 'sync-error' : 'mut'}">${pendError ? `No se pudo subir: ${esc(pendError)}` : 'Se suben solas con internet.'}</p><div class="row"><button class="btn small" id="bSync">Sincronizar</button><a class="btn ghost small" href="#/ventas">Vender</a><span class="mut" id="syncMsg"></span></div></div>
+    <div class="card span3"><h3>Ventas por subir</h3><div class="kpi">${pend.length} <small>· ${fmt(pendTotal)}</small></div><p class="${pendError ? 'sync-error' : 'mut'}">${pendError ? `No se pudo subir: ${esc(pendError)}` : 'Se suben solas con internet.'}</p><div class="row"><button class="btn small" id="bSync">Sincronizar</button>${pendError ? '<button class="btn ghost small" id="bWhy">Ver detalle</button>' : ''}<a class="btn ghost small" href="#/ventas">Vender</a><span class="mut" id="syncMsg"></span></div></div>
     <div class="card span3"><h3>Productos</h3><div class="kpi">${prods.length}</div><p class="mut">Valor stock: ${fmt(stockVal)}</p><div class="row"><a class="btn ghost small" href="#/productos">Ver stock</a></div></div>
     <div class="card span3"><h3>Stock bajo</h3><div class="kpi" style="color:${low.length ? '#ff8fa3' : 'inherit'}">${low.length}</div><p class="mut">${low.length ? 'Hay que reponer' : 'Todo OK'}</p><div class="row"><a class="btn ghost small" href="#/productos">Reponer</a></div></div>
     <div class="card span3"><h3>Tu app</h3><div class="kpi">⬇</div><p class="mut">Instalala en celu o PC. Anda sin internet.</p><div class="row"><button class="btn small" data-install>Descargar</button><button class="btn ghost small" id="bSetupPin">PIN sin internet</button></div></div>
@@ -420,6 +420,9 @@ async function vPanel() {
     </div>
   </div>`, 'panel', { orgs: list, org, email: (user as any)?.email, syncMsg });
   bindCommon(list, org);
+  (document.getElementById('bWhy') as HTMLButtonElement | null)?.addEventListener('click', () => {
+    alert(pendError || 'La venta sigue pendiente. Volvé a iniciar sesión y presioná Sincronizar.');
+  });
   (document.getElementById('bSetupPin') as HTMLButtonElement).onclick = async () => {
     const uid = (user as any)?.id;
     const email = (user as any)?.email;
