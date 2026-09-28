@@ -283,7 +283,7 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
         <a href="#/registro" class="${mode === 'up' ? 'on' : ''}">Crear cuenta</a>
       </div>
       <div style="display:flex;flex-direction:column;gap:.7rem">
-        <div class="field"><label>Tipo de cuenta</label><select id="accountType"><option value="negocio" ${getAccountType() === 'negocio' ? 'selected' : ''}>Negocio — quiero vender y gestionar mi stock</option><option value="empleado" ${getAccountType() === 'empleado' ? 'selected' : ''}>Empleado — espero que me agreguen a un negocio</option></select></div>
+        ${mode === 'up' ? `<div class="field"><label>Tipo de cuenta</label><select id="accountType"><option value="negocio" ${getAccountType() === 'negocio' ? 'selected' : ''}>Negocio — quiero vender y gestionar mi stock</option><option value="empleado" ${getAccountType() === 'empleado' ? 'selected' : ''}>Empleado — espero que me agreguen a un negocio</option></select></div>` : ''}
         <div class="field"><label>Email</label><input id="em" placeholder="vos@tunegocio.com" autocomplete="username" /></div>
         ${mode === 'up' ? '<div class="field"><label>WhatsApp</label><input id="ph" placeholder="3755 12-3456" autocomplete="tel" inputmode="tel" /></div>' : ''}
         <div class="field"><label>Contraseña</label>
@@ -326,7 +326,8 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
     if (!em.includes('@')) { showErr('Revisá el email, le falta el @'); return; }
     if (pw.length < 8) { showErr('La contraseña necesita 8 caracteres como mínimo'); return; }
     if (!navigator.onLine) { showErr('Sin internet no puedo verificar tu cuenta. Conectate una vez para entrar; después seguís trabajando offline.'); return; }
-    setAccountType((document.getElementById('accountType') as HTMLSelectElement).value);
+    const accountType = document.getElementById('accountType') as HTMLSelectElement | null;
+    if (accountType) setAccountType(accountType.value);
     if (mode === 'in') {
       busy(true, '');
       try {
