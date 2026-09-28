@@ -47,13 +47,23 @@ addEventListener('beforeinstallprompt', (e: Event) => {
 const isInstalled = () =>
   matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 
+function refreshInstallUI() {
+  const installed = isInstalled();
+  document.querySelectorAll<HTMLElement>('[data-install]').forEach((el) => {
+    el.hidden = installed;
+    el.style.display = installed ? 'none' : '';
+  });
+}
+
+matchMedia('(display-mode: standalone)').addEventListener?.('change', refreshInstallUI);
+
 async function installApp() {
-  if (isInstalled()) { toast('La app ya está instalada ✓'); return; }
+  if (isInstalled()) { refreshInstallUI(); toast('La app ya está instalada ✓'); return; }
   if (deferredPrompt) {
     deferredPrompt.prompt();
     const r = await deferredPrompt.userChoice.catch(() => null);
     deferredPrompt = null;
-    if (r?.outcome === 'accepted') toast('Instalando… buscala en tu inicio');
+    if (r?.outcome === 'accepted') { refreshInstallUI(); toast('Instalando… buscala en tu inicio'); }
     return;
   }
   const ov = document.createElement('div');
@@ -836,6 +846,7 @@ export async function router() {
     app.innerHTML = shell(`<div class="card"><h2>Algo falló</h2><p class="mut">${esc(e?.message ?? String(e))}</p><div class="row"><a class="btn small" href="#/panel">Reintentar</a></div></div>`, 'panel');
     bindCommon([], '');
   }
+  refreshInstallUI();
 }
 
 addEventListener('hashchange', router);
