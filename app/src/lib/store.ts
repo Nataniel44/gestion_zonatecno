@@ -324,7 +324,18 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
 
   // Primero subimos productos: así los IDs locales quedan reconciliados antes
   // de crear los sale_items que los referencian.
-  const productMap = await pushDirtyProducts(org_id);
+  let productMap: Map<string, string>;
+  try {
+    productMap = await pushDirtyProducts(org_id);
+  } catch (e: any) {
+    const rawError = errorText(e);
+    const pending = await db.outbox.where('org_id').equals(org_id).toArray();
+    for (const sale of pending) {
+      sale.lastError = rawError;
+      await db.outbox.put(sale);
+    }
+    return { synced: 0, pending: pending.length };
+  }
   const pend = await db.outbox.where('org_id').equals(org_id).sortBy('createdAt');
   const me = pb.authStore.model;
   let ok = 0;
