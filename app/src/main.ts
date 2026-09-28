@@ -1,5 +1,5 @@
 import './styles.css';
-import { isCloudConfigured, pbUrl } from './lib/pb';
+import { isCloudConfigured, pbUrl, isLoggedIn } from './lib/pb';
 import { db } from './lib/localdb';
 import {
   signIn, signUp, signOut, getUser, refreshSession, myOrgs, createOrg, addMemberById,
@@ -72,7 +72,8 @@ function statusPills(syncMsg = '') {
   return `${net}${cloud}${syncMsg ? `<span class="pill">${esc(syncMsg)}</span>` : ''}`;
 }
 
-function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: string }[]; org?: string; email?: string; syncMsg?: string } = {}) {
+function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: string; role?: string }[]; org?: string; email?: string; syncMsg?: string } = {}) {
+  const isOwner = opts.orgs?.some((o) => o.id === opts.org && o.role === 'dueno') ?? false;
   const nav = (cls: string) => `
     <div class="side">
       <div class="brand"><i>Z</i> ZT Gestión</div>
@@ -81,6 +82,7 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
         <a href="#/ventas" class="${tab === 'ventas' ? 'on' : ''}">◉ Vender</a>
         <a href="#/productos" class="${tab === 'productos' ? 'on' : ''}">▤ Stock</a>
         <a href="#/equipo" class="${tab === 'equipo' ? 'on' : ''}">⛁ Equipo</a>
+        ${isOwner ? `<a href="#/admin" class="${tab === 'admin' ? 'on' : ''}">⚙ Admin</a>` : ''}
         <button class="navdl" data-install>⬇ Descargar app</button>
       </nav>
       <div style="margin-top:auto;display:flex;flex-direction:column;gap:.5rem">
@@ -104,6 +106,7 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
         <a href="#/ventas" class="${tab === 'ventas' ? 'on' : ''}">Vender</a>
         <a href="#/productos" class="${tab === 'productos' ? 'on' : ''}">Stock</a>
         <a href="#/equipo" class="${tab === 'equipo' ? 'on' : ''}">Equipo</a>
+        ${isOwner ? `<a href="#/admin" class="${tab === 'admin' ? 'on' : ''}">Admin</a>` : ''}
       </nav>
     </div></div>`;
 }
@@ -169,18 +172,18 @@ async function requireUser() {
   return u;
 }
 
-async function loadOrgs(): Promise<{ list: { id: string; name: string }[]; cur: string; cloudError: string }> {
+async function loadOrgs(): Promise<{ list: { id: string; name: string; role?: string }[]; cur: string; cloudError: string }> {
   // Sin internet (o modo local forzado): trabajo local directo, sin pedir nada a la nube.
   // Se usa el negocio de la sesión con PIN (no demo-local) para ver su stock real.
   if (!navigator.onLine || !isCloudConfigured() || sessionStorage.getItem('zt_force_local')) {
     const s = getLocalSession();
     const demo = s?.org || getOrg() || 'demo-local';
     setOrg(demo);
-    return { list: [{ id: demo, name: s ? 'Mi negocio' : 'Mi negocio (local)' }], cur: demo, cloudError: '' };
+    return { list: [{ id: demo, name: s ? 'Mi negocio' : 'Mi negocio (local)', role: '' }], cur: demo, cloudError: '' };
   }
   try {
     const ms = await myOrgs();
-    const list = ms.map((m) => ({ id: m.org_id, name: (m.orgs as any)?.name ?? m.org_id }));
+    const list = ms.map((m) => ({ id: m.org_id, name: (m.orgs as any)?.name ?? m.org_id, role: m.role }));
     if (!list.length) return { list, cur: '', cloudError: '' };
     let cur = getOrg();
     if (!cur || !list.find((o) => o.id === cur)) { cur = list[0].id; setOrg(cur); }
@@ -196,7 +199,7 @@ async function loadOrgs(): Promise<{ list: { id: string; name: string }[]; cur: 
       const s = getLocalSession();
       const demo = s?.org || getOrg() || 'demo-local';
       setOrg(demo);
-      return { list: [{ id: demo, name: s ? 'Mi negocio' : 'Mi negocio (local)' }], cur: demo, cloudError: '' };
+      return { list: [{ id: demo, name: s ? 'Mi negocio' : 'Mi negocio (local)', role: '' }], cur: demo, cloudError: '' };
     }
     return { list: [], cur: '', cloudError: (st ? '(http ' + st + ') ' : '') + msg + '. ¿Están las 8 tablas en /_/ → Collections?' };
   }
@@ -613,6 +616,82 @@ async function vVentas() {
   render();
 }
 
+// ---------- Admin (solo dueño) ----------
+async function vAdmin() {
+  const user = await requireUser();
+  const { list, cur, cloudError } = await loadOrgs();
+  if (!cur) { location.hash = '#/panel'; return; }
+  const owner = list.find((o) => o.id === cur)?.role === 'dueno';
+  if (!owner) {
+    app.innerHTML = shell(`<div class="bento"><div class="card span12"><h2>Acceso restringido</h2><p class="mut">El panel de administración solo puede verlo el dueño del negocio.</p><div class="row"><a class="btn small" href="#/panel">Volver al panel</a></div></div></div>`, 'admin', { orgs: list, org: cur, email: (user as any)?.email });
+    bindCommon(list, cur);
+    return;
+  }
+
+  const [products, pending, pins, members] = await Promise.all([
+    db.products.where('org_id').equals(cur).toArray(),
+    db.outbox.where('org_id').equals(cur).toArray(),
+    db.pins.toArray(),
+    listMembers(cur).catch(() => [])
+  ]);
+  const visibleProducts = products.filter((p) => !p.deleted);
+  const pendingTotal = pending.reduce((sum, sale) => sum + sale.total, 0);
+  const lastError = pending.find((sale) => sale.lastError)?.lastError ?? 'sin errores';
+  const orgName = list.find((o) => o.id === cur)?.name ?? cur;
+  const report = [
+    `ZT Gestión · ${orgName}`,
+    `Fecha: ${new Date().toLocaleString('es-AR')}`,
+    `Usuario: ${(user as any)?.email ?? 'local'}`,
+    `Nube: ${isCloudConfigured() ? (navigator.onLine ? 'configurada' : 'sin internet') : 'no configurada'}`,
+    `Productos locales: ${visibleProducts.length}`,
+    `Ventas pendientes: ${pending.length} (${fmt(pendingTotal)})`,
+    `PINs guardados: ${pins.length}`,
+    `Equipo: ${members.length}`,
+    `Último error: ${lastError}`,
+    `Diagnóstico: ${cloudError || 'sin errores de conexión'}`
+  ].join('\n');
+
+  app.innerHTML = shell(`<div class="bento">
+    <div class="card span12 admin-banner"><div><h2>Panel de administración</h2><p class="mut">Solo el dueño puede ver esta pantalla y los datos sensibles del negocio.</p></div><span class="pill ok">${esc(orgName)}</span></div>
+    <div class="card span6"><h3>Estado local</h3><div class="admin-stats"><div><b>${visibleProducts.length}</b><small>productos</small></div><div><b>${pending.length}</b><small>ventas pendientes</small></div><div><b>${pins.length}</b><small>PINs</small></div></div><p class="mut">La data local vive en este dispositivo (IndexedDB).</p></div>
+    <div class="card span6"><h3>Estado de la nube</h3><div id="cloudState" class="diag-list"><div class="diag-row"><span>${navigator.onLine ? 'Internet' : 'Sin internet'}</span><b>${navigator.onLine ? '✓' : '—'}</b></div><div class="diag-row"><span>PocketBase</span><b>${isCloudConfigured() ? 'configurado' : 'no'}</b></div><div class="diag-row"><span>Sesión</span><b>${isLoggedIn() ? 'activa' : 'local'}</b></div></div></div>
+    <div class="card span6"><h3>Equipo</h3><div class="admin-team">${members.map((m) => `<div><b>${esc(m.name)}</b><small>${esc(m.email || m.id)} · ${esc(m.role)}</small></div>`).join('') || '<p class="mut">Sin miembros cargados.</p>'}</div></div>
+    <div class="card span6"><h3>Diagnóstico</h3><p class="mut">${esc(lastError)}</p><div class="row"><button class="btn small" id="bDiag">Probar conexión</button><button class="btn ghost small" id="bAdminSync">Sincronizar ahora</button><button class="btn ghost small" id="bCopyReport">Copiar informe</button></div><pre id="diagResult" class="diag-result">Presioná Probar conexión para verificar el servidor.</pre></div>
+    <div class="card span12 danger-zone"><h3>Zona sensible</h3><p class="mut">Borrar los datos locales elimina stock, ventas pendientes y PINs de este dispositivo. La nube no se borra.</p><button class="btn ghost small" id="bResetLocal">Borrar datos locales</button></div>
+  </div>`, 'admin', { orgs: list, org: cur, email: (user as any)?.email, syncMsg: cloudError });
+  bindCommon(list, cur);
+
+  const diag = (text: string, ok = true) => { const el = document.getElementById('diagResult'); if (el) el.textContent = text; return ok; };
+  (document.getElementById('bDiag') as HTMLButtonElement).onclick = async () => {
+    const button = document.getElementById('bDiag') as HTMLButtonElement;
+    button.disabled = true;
+    try {
+      const health = await withTimeout(fetch(pbUrl() + '/api/health'));
+      if (!health.ok) throw new Error('HTTP ' + health.status);
+      const checkOrgs = await withTimeout(myOrgs());
+      diag(`PocketBase: OK\nOrganizaciones visibles: ${checkOrgs.length}\nSin errores de red.`);
+      toast('Diagnóstico correcto');
+    } catch (e: any) { diag(`Error: ${e?.message ?? e}`); toast('La nube no responde'); }
+    finally { button.disabled = false; }
+  };
+  (document.getElementById('bAdminSync') as HTMLButtonElement).onclick = async () => {
+    const button = document.getElementById('bAdminSync') as HTMLButtonElement;
+    button.disabled = true;
+    try { const r = await withTimeout(syncOutbox(cur)); await withTimeout(pullProducts(cur)); toast(`${r.synced} subidas, ${r.pending} pendientes`); router(); }
+    catch (e: any) { toast(e?.message ?? 'No pude sincronizar'); }
+    finally { button.disabled = false; }
+  };
+  (document.getElementById('bCopyReport') as HTMLButtonElement).onclick = async () => {
+    try { await navigator.clipboard.writeText(report); toast('Informe copiado'); } catch { window.alert(report); }
+  };
+  (document.getElementById('bResetLocal') as HTMLButtonElement).onclick = async () => {
+    if (!confirm('Esto borra productos, ventas pendientes y PINs de este dispositivo. ¿Continuar?')) return;
+    await db.delete();
+    toast('Datos locales borrados');
+    location.reload();
+  };
+}
+
 // ---------- Equipo ----------
 async function vEquipo() {
   const user = await requireUser();
@@ -723,6 +802,7 @@ export async function router() {
     else if (h.startsWith('#/productos')) await vProductos();
     else if (h.startsWith('#/ventas')) await vVentas();
     else if (h.startsWith('#/equipo')) await vEquipo();
+    else if (h.startsWith('#/admin')) await vAdmin();
     else await vPanel();
   } catch (e: any) {
     if (String(e?.message) === 'login') { location.hash = '#/login'; await vLogin('in'); return; }
