@@ -8,16 +8,16 @@ export interface SyncResult { synced: number; pending: number; }
 const isNotFound = (e: any) =>
   e?.status === 404 || e?.response?.status === 404 || e?.data?.code === 404;
 
-const errorText = (e: any): string => {
+const errorText = (e: any, context = ''): string => {
   const body = e?.response?.data ?? e?.data;
   const details = body?.data;
   if (details && typeof details === 'object') {
     const fields = Object.entries(details)
       .map(([field, value]: [string, any]) => `${field}: ${value?.message ?? value?.code ?? 'valor inválido'}`)
       .join(' · ');
-    if (fields) return fields;
+    if (fields) return `${context ? context + ': ' : ''}${fields}`;
   }
-  return body?.message ?? e?.message ?? String(e);
+  return `${context ? context + ': ' : ''}${body?.message ?? e?.message ?? String(e)}`;
 };
 
 // ---- Auth (PocketBase colección users) ----
@@ -101,7 +101,7 @@ export async function createOrg(name: string) {
   } catch (e) {
     // No dejamos una organización huérfana si falla la membresía inicial.
     await pb.collection('orgs').delete(org.id).catch(() => undefined);
-    throw new Error('No pude terminar de crear el negocio. Probá de nuevo.');
+    throw new Error(`No pude terminar de crear el negocio: ${errorText(e)}`);
   }
   return org;
 }
@@ -369,6 +369,7 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
   let ok = 0;
 
   for (const s of pend) {
+    let stage = 'venta';
     try {
       // Actualiza referencias de productos que recién fueron creados en cloud.
       for (const item of s.items) {
@@ -391,6 +392,7 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
         }
       }
 
+      stage = 'venta';
       let sale: any = null;
       try {
         sale = await pb.collection('sales').getFirstListItem(`org="${org_id}" && local_id="${s.id}"`);
@@ -404,6 +406,7 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
       }
 
       for (let index = 0; index < s.items.length; index++) {
+        stage = 'línea de venta';
         const item = s.items[index];
         const itemLocalId = `${s.id}:${index}`;
         let existingItem: any = null;
@@ -419,6 +422,7 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
           });
         }
 
+        stage = 'movimiento de stock';
         let existingMove: any = null;
         try {
           existingMove = await pb.collection('stock_moves').getFirstListItem(`org="${org_id}" && local_id="${itemLocalId}"`);
@@ -437,7 +441,7 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
       ok++;
     } catch (e: any) {
       s.attempts = (s.attempts ?? 0) + 1;
-      const rawError = errorText(e);
+      const rawError = errorText(e, stage);
       s.lastError = /local_id|occurred_at|unknown field|field.*not found/i.test(String(rawError))
         ? `${rawError}. El servidor necesita el esquema nuevo: ejecutá setup:pocketbase en el VPS.`
         : String(rawError);
