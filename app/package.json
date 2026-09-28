@@ -2,7 +2,7 @@
   "name": "zonatecno-gestion",
   "private": true,
   "version": "0.1.0",
-  "description": "Subsistema híbrido multiempresa: ventas, stock, caja y taller. Offline + nube.",
+  "description": "MVP de gestión: ventas, stock y equipo. Funciona online y offline.",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"

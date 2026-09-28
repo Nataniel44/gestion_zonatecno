@@ -12,7 +12,7 @@ export default defineConfig({
       manifest: {
         name: 'ZonaTecno Gestión',
         short_name: 'ZT Gestión',
-        description: 'Ventas, stock, caja y taller. Funciona sin internet.',
+        description: 'Ventas, stock y equipo. Funciona online y offline.',
         theme_color: '#0a141f',
         background_color: '#0a141f',
         display: 'standalone',
