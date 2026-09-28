@@ -403,6 +403,8 @@ async function vPanel() {
   }
   const org = cur;
   const orgName = list.find((o) => o.id === org)?.name ?? org.slice(0, 8);
+  const role = list.find((o) => o.id === org)?.role ?? 'vendedor';
+  const canSeeStats = role === 'dueno' || role === 'admin';
   // Pull nube si hay conexión (no rompe si falla: seguimos con local)
   let syncMsg = '';
   if (navigator.onLine && isCloudConfigured()) {
@@ -454,17 +456,17 @@ async function vPanel() {
     <div><div class="eyebrow">Mi negocio · ${esc(today)}</div><h1>${greeting}, ${esc(userName)} 👋</h1><p>Todo simple para vender, reponer y saber cómo va tu negocio.</p></div>
     <div class="welcome-actions"><a class="btn" href="#/ventas">🛒 Vender ahora</a><a class="btn ghost" href="#/productos">📦 Cargar stock</a></div>
   </div>
-  <div class="metric-grid">
+  ${canSeeStats ? `<div class="metric-grid">
     <a class="metric-card" href="#/ventas"><span>Ventas de hoy</span><strong>${fmt(todayTotal)}</strong><small>${todayTotal ? '¡Buen día de ventas!' : 'Todavía no vendiste hoy'}</small></a>
     <div class="metric-card"><span>Para subir</span><strong>${pend.length}</strong><small>${pendError ? 'Revisá el detalle' : 'Se suben solas'}</small></div>
     <a class="metric-card" href="#/productos"><span>Stock bajo</span><strong class="${low.length ? 'warn-text' : ''}">${low.length}</strong><small>${low.length ? 'Productos por reponer' : 'Todo tranquilo'}</small></a>
     <div class="metric-card"><span>Valor del stock</span><strong>${fmt(stockVal)}</strong><small>${prods.length} productos cargados</small></div>
-  </div>
+  </div>` : ''}
   <div class="dash-grid">
-    <div class="card dash-wide">
+    ${canSeeStats ? `<div class="card dash-wide">
       <div class="row" style="justify-content:space-between;align-items:start"><h3 style="margin:0">Cómo vienen las ventas</h3><span class="mut">Últimos 7 días · ${fmt(chartTotal)}</span></div>
       <div class="sales-chart" role="img" aria-label="Ventas de los últimos siete días: ${fmt(chartTotal)}">${chartHTML}</div>
-    </div>
+    </div>` : `<div class="card dash-wide employee-banner"><div class="empty-dashboard">🧾<br/><b>Tus ventas</b><p class="mut">Registrá una venta y el dueño la verá en el panel del negocio.</p></div></div>`}
     <div class="card dash-side quick-card"><h3>Hagamos algo</h3><p class="mut">Botones grandes para no buscar nada.</p><div class="quick-actions"><a class="quick-action" href="#/ventas"><b>🛒</b><span>Vender<small>Cobrar una venta</small></span></a><a class="quick-action" href="#/productos"><b>📦</b><span>Reponer<small>Agregar stock</small></span></a><a class="quick-action" href="#/equipo"><b>👥</b><span>Equipo<small>Ver personas</small></span></a><button class="quick-action" data-install><b>⬇</b><span>Instalar app<small>Para el celular</small></span></button></div></div>
     <div class="card dash-wide"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Hay que reponer</h3><a class="text-link" href="#/productos">Ver todo el stock →</a></div>${low.length ? `<div class="reorder-list">${low.slice(0, 5).map((p) => `<div class="reorder-row"><div><b>${esc(p.name)}</b><small>Quedan ${p.stock} ${p.stock === 1 ? 'unidad' : 'unidades'}</small></div><strong>${fmt(p.price)}</strong></div>`).join('')}</div>` : '<div class="empty-dashboard">🌿 Todo está bien. No hay productos por reponer.</div>'}</div>
     <div class="card dash-side"><h3>Últimas ventas</h3>${hist.length ? `<div class="sales-list">${hist.slice(0, 5).map((h: any) => `<div class="sale-row"><span>${new Date(h.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span><b>${fmt(h.total)}</b></div>`).join('')}</div>` : '<div class="empty-dashboard">🧾 Todavía no hay ventas cargadas.</div>'}${pend.length ? `<p class="mut pending-note">+ ${pend.length} venta${pend.length === 1 ? '' : 's'} en este equipo · ${fmt(pendTotal)}</p>` : ''}</div>
