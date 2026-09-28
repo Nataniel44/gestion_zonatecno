@@ -59,6 +59,26 @@ export async function myOrgs(): Promise<Membership[]> {
   return out;
 }
 
+export interface OrgMember { id: string; name: string; email: string; role: string; }
+
+export async function listMembers(org_id: string): Promise<OrgMember[]> {
+  if (!isCloudConfigured() || !navigator.onLine || !pb.authStore.isValid) return [];
+  const rows = await pb.collection('memberships').getFullList({
+    filter: `org="${org_id}"`,
+    expand: 'user',
+    sort: 'created'
+  });
+  return (rows as any[]).map((m) => {
+    const user = m.expand?.user ?? {};
+    return {
+      id: m.user,
+      name: user.name || user.email || 'Usuario del equipo',
+      email: user.email ?? '',
+      role: m.role ?? 'vendedor'
+    };
+  });
+}
+
 export async function createOrg(name: string) {
   const me = pb.authStore.model;
   if (!me) throw new Error('Sin sesión');

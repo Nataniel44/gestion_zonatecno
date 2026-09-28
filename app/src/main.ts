@@ -4,7 +4,7 @@ import { db } from './lib/localdb';
 import {
   signIn, signUp, signOut, getUser, refreshSession, myOrgs, createOrg, addMemberById,
   pullProducts, saveProductLocal, deleteProductLocal, newLocalProduct,
-  createSaleOffline, syncOutbox, salesHistoryCloud,
+  createSaleOffline, syncOutbox, salesHistoryCloud, listMembers,
   hashPin, setLocalSession, getLocalSession
 } from './lib/store';
 
@@ -592,20 +592,36 @@ async function vVentas() {
 async function vEquipo() {
   const user = await requireUser();
   const { list, cur } = await loadOrgs();
+  const currentName = list.find((o) => o.id === cur)?.name ?? (cur ? 'tu negocio' : '');
+  const members = cur && isCloudConfigured() ? await listMembers(cur).catch(() => []) : [];
+  const roleLabel = (role: string) => role === 'dueno' ? 'Dueño' : role === 'admin' ? 'Administrador' : 'Vendedor';
+  const teamList = members.length
+    ? `<div class="team-list">${members.map((m) => `<div class="team-row"><i class="team-avatar">${esc((m.name || '?').charAt(0).toUpperCase())}</i><div><b>${esc(m.name)}</b><small>${esc(m.email || m.id)}</small></div><span class="role-tag ${m.role === 'vendedor' ? 'seller' : 'admin'}">${roleLabel(m.role)}</span></div>`).join('')}</div>`
+    : '<p class="mut">Todavía no hay personas cargadas en este negocio.</p>';
+  const teamContent = !cur
+    ? '<p class="mut">Primero creá un negocio. Después vas a poder invitar vendedores y administradores.</p><a class="btn small" href="#/panel">Ir al panel</a>'
+    : !isCloudConfigured()
+      ? '<p class="mut">Estás en modo local. El equipo multiusuario necesita la nube configurada.</p>'
+      : `<p class="mut">Negocio: <b>${esc(currentName)}</b> · Sesión: ${esc((user as any)?.email ?? '')}</p>
+        <ol class="team-steps">
+          <li><b>1.</b> Pedile al vendedor que cree su cuenta desde <b>Crear cuenta</b>.</li>
+          <li><b>2.</b> Que te pase su <b>ID de usuario</b> (no es su email).</li>
+          <li><b>3.</b> Pegalo acá y elegí qué puede hacer.</li>
+        </ol>
+        <div class="field"><label for="mId">ID del usuario</label><input id="mId" autocomplete="off" placeholder="Ej: 8fj2k1abcde" /><small class="hint">Lo encontrás en PocketBase → usuarios, en la ficha del vendedor.</small></div>
+        <div class="field"><label for="mRole">Permiso</label><select id="mRole"><option value="vendedor">Vendedor — puede vender y consultar stock</option><option value="admin">Administrador — puede administrar stock y ventas</option></select></div>
+        <div class="row" style="margin-top:.6rem"><button class="btn small" id="bAdd">Agregar al equipo</button></div>
+        <p class="mut">Por seguridad, solo el dueño del negocio puede agregar o quitar personas.</p>
+        <h3 class="team-subtitle">Personas con acceso</h3>${teamList}`;
+
   app.innerHTML = shell(`<div class="bento">
-    <div class="card span6"><h2>Nuevo negocio</h2><p class="mut">Un negocio = stock y ventas separados.</p>
-      <div class="row"><input id="orgName" placeholder="Ej: Kiosco El Centro" style="max-width:280px"/><button class="btn small" id="bOrg">Crear</button></div></div>
-    <div class="card span6"><h2>Equipo del negocio actual</h2>
-      ${isCloudConfigured() ? `<p class="mut">Sesión: ${esc((user as any)?.email ?? '')}</p>
-      <div class="grid2"><input id="mId" placeholder="ID del usuario (lo ves en PocketBase → users)" /><select id="mRole"><option value="vendedor">vendedor</option><option value="admin">admin</option></select></div>
-      <div class="row" style="margin-top:.5rem"><button class="btn small" id="bAdd">Agregar</button></div>
-      <p class="mut">El empleado crea su cuenta en Login, vos lo agregás acá.</p>`
-      : '<p class="mut">Modo local. Configurá VITE_PB_URL para equipo multiempresa.</p>'}
+    <div class="card span6"><h2>Nuevo negocio</h2><p class="mut">Cada negocio tiene su propio stock, ventas y equipo.</p>
+      <div class="field"><label for="orgName">Nombre del negocio</label><div class="row"><input id="orgName" placeholder="Ej: Kiosco El Centro" style="max-width:280px"/><button class="btn small" id="bOrg">Crear negocio</button></div></div>
     </div>
-    <div class="card span12"><h2>PIN para vender sin internet</h2>
+    <div class="card span6"><h2>Equipo</h2>${teamContent}</div>
+    <div class="card span12"><h2>Abrir la caja sin internet</h2>
       <p class="mut" id="pinState">Reviso este equipo…</p>
-      <div class="row"><input id="pinNew" inputmode="numeric" maxlength="12" placeholder="PIN de 6 números" style="max-width:220px"/><button class="btn small" id="bPinSave">Guardar PIN</button></div>
-      <p class="mut">Con PIN, este equipo abre la caja sin wifi. Cada vendedor pone el suyo cuando entra.</p>
+      <div class="field"><label for="pinNew">PIN de este vendedor</label><div class="row"><input id="pinNew" inputmode="numeric" maxlength="12" placeholder="6 números" style="max-width:220px"/><button class="btn small" id="bPinSave">Guardar o cambiar PIN</button></div><small class="hint">El PIN queda guardado solamente en este dispositivo. Sirve para vender cuando se corta internet.</small></div>
     </div></div>`, 'equipo', { orgs: list, org: cur, email: (user as any)?.email });
   bindCommon(list, cur);
   // Estado del PIN en este equipo
@@ -631,17 +647,26 @@ async function vEquipo() {
   };
   const bO = document.getElementById('bOrg') as HTMLButtonElement | null;
   if (bO) bO.onclick = async () => {
+    const name = (document.getElementById('orgName') as HTMLInputElement).value.trim();
+    if (name.length < 2) { toast('Escribí un nombre de al menos 2 caracteres'); return; }
+    bO.disabled = true;
     try {
-      const o = await createOrg((document.getElementById('orgName') as HTMLInputElement).value.trim());
+      const o = await createOrg(name);
       setOrg(o.id); toast('Negocio creado'); router();
-    } catch (e: any) { toast(e.message); }
+    } catch (e: any) { bO.disabled = false; toast(e.message); }
   };
   const bA = document.getElementById('bAdd') as HTMLButtonElement | null;
   if (bA) bA.onclick = async () => {
+    if (!cur) { toast('Primero creá un negocio'); return; }
+    const memberId = (document.getElementById('mId') as HTMLInputElement).value.trim();
+    if (memberId.length < 8) { toast('Revisá el ID del usuario'); return; }
+    bA.disabled = true;
     try {
-      await addMemberById(cur, (document.getElementById('mId') as HTMLInputElement).value.trim(), (document.getElementById('mRole') as HTMLSelectElement).value);
-      toast('Empleado agregado');
+      await addMemberById(cur, memberId, (document.getElementById('mRole') as HTMLSelectElement).value);
+      (document.getElementById('mId') as HTMLInputElement).value = '';
+      toast('Persona agregada al equipo');
     } catch (e: any) { toast(e.message); }
+    finally { bA.disabled = false; }
   };
 }
 
