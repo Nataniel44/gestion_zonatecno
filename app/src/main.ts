@@ -434,6 +434,14 @@ async function vPanel() {
     }, 0);
     return { label: date.toLocaleDateString('es-AR', { weekday: 'short' }).slice(0, 2), total };
   });
+  const todayKey = dayKey(new Date());
+  const todayTotal = [...hist, ...pend].reduce((sum, sale: any) => {
+    const saleDate = sale.created_at ?? sale.createdAt;
+    return sum + (dayKey(saleDate) === todayKey ? Number(sale.total || 0) : 0);
+  }, 0);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
+  const userName = String((user as any)?.email ?? 'bienvenido').split('@')[0];
   const chartMax = Math.max(1, ...chart.map((d) => d.total));
   const chartTotal = chart.reduce((sum, d) => sum + d.total, 0);
   const chartHTML = chart.map((d) => {
@@ -442,34 +450,36 @@ async function vPanel() {
   }).join('');
 
   app.innerHTML = shell(`
-  <p class="mut" style="margin:.2rem 0 1rem">${esc(orgName)} · ${today}</p>
-  <div class="bento">
-    <div class="card span3"><h3>Ventas por subir</h3><div class="kpi">${pend.length} <small>· ${fmt(pendTotal)}</small></div><p class="${pendError ? 'sync-error' : 'mut'}">${pendError ? `No se pudo subir: ${esc(pendError)}` : 'Se suben solas con internet.'}</p><div class="row"><button class="btn small" id="bSync">Sincronizar</button>${pendError ? '<button class="btn ghost small" id="bWhy">Ver detalle</button>' : ''}<a class="btn ghost small" href="#/ventas">Vender</a><span class="mut" id="syncMsg"></span></div></div>
-    <div class="card span3"><h3>Productos</h3><div class="kpi">${prods.length}</div><p class="mut">Valor stock: ${fmt(stockVal)}</p><div class="row"><a class="btn ghost small" href="#/productos">Ver stock</a></div></div>
-    <div class="card span3"><h3>Stock bajo</h3><div class="kpi" style="color:${low.length ? '#ff8fa3' : 'inherit'}">${low.length}</div><p class="mut">${low.length ? 'Hay que reponer' : 'Todo OK'}</p><div class="row"><a class="btn ghost small" href="#/productos">Reponer</a></div></div>
-    <div class="card span3"><h3>Tu app</h3><div class="kpi">⬇</div><p class="mut">Instalala en celu o PC. Anda sin internet.</p><div class="row"><button class="btn small" data-install>Descargar</button><button class="btn ghost small" id="bSetupPin">PIN sin internet</button></div></div>
-    <div class="card span8">
-      <div class="row" style="justify-content:space-between;align-items:start"><h3 style="margin:0">Ventas de la semana</h3><span class="mut">${fmt(chartTotal)}</span></div>
+  <div class="welcome-row">
+    <div><div class="eyebrow">Mi negocio · ${esc(today)}</div><h1>${greeting}, ${esc(userName)} 👋</h1><p>Todo simple para vender, reponer y saber cómo va tu negocio.</p></div>
+    <div class="welcome-actions"><a class="btn" href="#/ventas">🛒 Vender ahora</a><a class="btn ghost" href="#/productos">📦 Cargar stock</a></div>
+  </div>
+  <div class="metric-grid">
+    <a class="metric-card" href="#/ventas"><span>Ventas de hoy</span><strong>${fmt(todayTotal)}</strong><small>${todayTotal ? '¡Buen día de ventas!' : 'Todavía no vendiste hoy'}</small></a>
+    <div class="metric-card"><span>Para subir</span><strong>${pend.length}</strong><small>${pendError ? 'Revisá el detalle' : 'Se suben solas'}</small></div>
+    <a class="metric-card" href="#/productos"><span>Stock bajo</span><strong class="${low.length ? 'warn-text' : ''}">${low.length}</strong><small>${low.length ? 'Productos por reponer' : 'Todo tranquilo'}</small></a>
+    <div class="metric-card"><span>Valor del stock</span><strong>${fmt(stockVal)}</strong><small>${prods.length} productos cargados</small></div>
+  </div>
+  <div class="dash-grid">
+    <div class="card dash-wide">
+      <div class="row" style="justify-content:space-between;align-items:start"><h3 style="margin:0">Cómo vienen las ventas</h3><span class="mut">Últimos 7 días · ${fmt(chartTotal)}</span></div>
       <div class="sales-chart" role="img" aria-label="Ventas de los últimos siete días: ${fmt(chartTotal)}">${chartHTML}</div>
     </div>
-    <div class="card span8"><h3>Reponer ${low.length ? `(${low.length})` : ''}</h3>
-      ${low.length ? `<table><tr><th>Producto</th><th>Stock</th><th>Precio</th></tr>${low.slice(0, 8).map((p) => `<tr><td>${esc(p.name)}</td><td class="low">${p.stock} un.</td><td>${fmt(p.price)}</td></tr>`).join('')}</table>` : '<p class="mut">Sin alertas. Cuando un producto llegue a su mínimo aparece acá.</p>'}
-    </div>
-    <div class="card span4"><h3>Últimas ventas (nube)</h3>
-      ${hist.length ? `<table>${hist.map((h: any) => `<tr><td>${new Date(h.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td>${esc(h.pay_method)}</td><td>${fmt(h.total)}</td></tr>`).join('')}</table>` : '<p class="mut">Aún no hay ventas en la nube. Vendé una y sincronizá.</p>'}
-      ${pend.length ? `<p class="mut" style="margin-top:.5rem">+ ${pend.length} pendientes en este equipo (${fmt(pendTotal)}).</p>` : ''}
-    </div>
+    <div class="card dash-side quick-card"><h3>Hagamos algo</h3><p class="mut">Botones grandes para no buscar nada.</p><div class="quick-actions"><a class="quick-action" href="#/ventas"><b>🛒</b><span>Vender<small>Cobrar una venta</small></span></a><a class="quick-action" href="#/productos"><b>📦</b><span>Reponer<small>Agregar stock</small></span></a><a class="quick-action" href="#/equipo"><b>👥</b><span>Equipo<small>Ver personas</small></span></a><button class="quick-action" data-install><b>⬇</b><span>Instalar app<small>Para el celular</small></span></button></div></div>
+    <div class="card dash-wide"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Hay que reponer</h3><a class="text-link" href="#/productos">Ver todo el stock →</a></div>${low.length ? `<div class="reorder-list">${low.slice(0, 5).map((p) => `<div class="reorder-row"><div><b>${esc(p.name)}</b><small>Quedan ${p.stock} ${p.stock === 1 ? 'unidad' : 'unidades'}</small></div><strong>${fmt(p.price)}</strong></div>`).join('')}</div>` : '<div class="empty-dashboard">🌿 Todo está bien. No hay productos por reponer.</div>'}</div>
+    <div class="card dash-side"><h3>Últimas ventas</h3>${hist.length ? `<div class="sales-list">${hist.slice(0, 5).map((h: any) => `<div class="sale-row"><span>${new Date(h.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span><b>${fmt(h.total)}</b></div>`).join('')}</div>` : '<div class="empty-dashboard">🧾 Todavía no hay ventas cargadas.</div>'}${pend.length ? `<p class="mut pending-note">+ ${pend.length} venta${pend.length === 1 ? '' : 's'} en este equipo · ${fmt(pendTotal)}</p>` : ''}</div>
+    <div class="card dash-wide sync-card"><div class="row" style="justify-content:space-between;align-items:center"><div><h3 style="margin:0">Ventas guardadas</h3><p class="${pendError ? 'sync-error' : 'mut'}">${pendError ? `No se pudo subir: ${esc(pendError)}` : 'Tus ventas quedan guardadas en este equipo y se suben cuando hay internet.'}</p></div><div class="row">${pendError ? '<button class="btn ghost small" id="bWhy">Ver detalle</button>' : ''}<button class="btn small" id="bSync">Subir ventas</button></div></div><span class="mut" id="syncMsg"></span></div>
   </div>`, 'panel', { orgs: list, org, email: (user as any)?.email, syncMsg });
   bindCommon(list, org);
   (document.getElementById('bWhy') as HTMLButtonElement | null)?.addEventListener('click', () => {
     alert(pendError || 'La venta sigue pendiente. Volvé a iniciar sesión y presioná Sincronizar.');
   });
-  (document.getElementById('bSetupPin') as HTMLButtonElement).onclick = async () => {
+  (document.getElementById('bSetupPin') as HTMLButtonElement | null)?.addEventListener('click', async () => {
     const uid = (user as any)?.id;
     const email = (user as any)?.email;
     if (!uid || !email || uid === 'local') { toast('Entrá con tu cuenta para configurar el PIN'); return; }
     await promptPin(uid, email, org);
-  };
+  });
   (document.getElementById('bSync') as HTMLButtonElement).onclick = async () => {
     (document.getElementById('syncMsg') as HTMLElement).textContent = 'sincronizando…';
     try {
