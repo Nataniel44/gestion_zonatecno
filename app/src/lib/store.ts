@@ -8,6 +8,18 @@ export interface SyncResult { synced: number; pending: number; }
 const isNotFound = (e: any) =>
   e?.status === 404 || e?.response?.status === 404 || e?.data?.code === 404;
 
+const errorText = (e: any): string => {
+  const body = e?.response?.data ?? e?.data;
+  const details = body?.data;
+  if (details && typeof details === 'object') {
+    const fields = Object.entries(details)
+      .map(([field, value]: [string, any]) => `${field}: ${value?.message ?? value?.code ?? 'valor inválido'}`)
+      .join(' · ');
+    if (fields) return fields;
+  }
+  return body?.message ?? e?.message ?? String(e);
+};
+
 // ---- Auth (PocketBase colección users) ----
 export async function signIn(email: string, password: string) {
   await pb.collection('users').authWithPassword(email, password);
@@ -380,9 +392,9 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
       ok++;
     } catch (e: any) {
       s.attempts = (s.attempts ?? 0) + 1;
-      const rawError = e?.response?.data?.message ?? e?.data?.message ?? e?.message ?? String(e);
+      const rawError = errorText(e);
       s.lastError = /local_id|occurred_at|unknown field|field.*not found/i.test(String(rawError))
-        ? 'El servidor necesita el esquema nuevo de sincronización. Ejecutá setup:pocketbase en el VPS.'
+        ? `${rawError}. El servidor necesita el esquema nuevo: ejecutá setup:pocketbase en el VPS.`
         : String(rawError);
       await db.outbox.put(s);
     }
