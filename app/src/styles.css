@@ -97,7 +97,10 @@ th { color: var(--mut); font-size: .75rem; text-transform: uppercase; letter-spa
 .prod-grid { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
 .prod { display: flex; flex-direction: column; gap: .4rem; }
 .pos { display: grid; grid-template-columns: 1fr 340px; gap: .9rem; align-items: start; }
-.pos-page { display: grid; gap: 1rem; }
+.pos-page { display: grid; gap: .7rem; }
+.pos-products { display: flex; flex-direction: column; overflow: hidden; }
+.pos-search { position: sticky; top: 0; z-index: 2; background: linear-gradient(180deg, var(--panel) 78%, transparent); padding-bottom: .45rem; }
+.pos-cart-foot { border-top: 1px solid var(--line); margin-top: .6rem; padding-top: .6rem; background: linear-gradient(180deg, transparent, rgba(8,15,24,.72) 32%); }
 .pos-head-compact { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .1rem; }
 .pos-head-compact h1 { font-size: 1.45rem; margin: 0; }
 .pos-head-compact p { color: var(--mut); font-size: .84rem; margin-top: .1rem; }
@@ -200,13 +203,13 @@ select.orgsel { max-width: 260px; }
 
 /* PC first, responsive */
 @media (min-width: 1021px) {
-  .pos-layout { height: calc(100dvh - 145px); min-height: 520px; align-items: stretch; }
+  .pos-page { height: calc(100dvh - 122px); min-height: 560px; }
+  .pos-layout { height: 100%; min-height: 0; max-height: 900px; grid-template-columns: minmax(0, 1fr) 390px; align-items: stretch; }
   .pos-products, .pos-cart { height: 100%; min-height: 0; }
-  .pos-products { display: flex; flex-direction: column; }
-  .pos-products .prod-grid { flex: 1; min-height: 0; overflow-y: auto; align-content: start; padding-right: .3rem; }
-  .pos-cart { display: flex; flex-direction: column; overflow: hidden; }
-  .pos-cart #cartBox { flex: 1; min-height: 0; overflow-y: auto; }
-  .cart-head, .pay-label, .pay-grid, .charge-btn, .pos-note { flex-shrink: 0; }
+  .pos-products .prod-grid { flex: 1; min-height: 0; overflow-y: auto; align-content: start; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); padding-right: .3rem; }
+  .pos-cart { overflow: hidden; }
+  .cart-scroll { flex: 1; min-height: 140px; overflow-y: auto; padding-right: .2rem; }
+  .cart-head, .pos-cart-foot { flex-shrink: 0; }
 }
 @media (max-width: 1020px) {
   .span3 { grid-column: span 6; } .span4 { grid-column: span 6; } .span8 { grid-column: span 12; } .span6 { grid-column: span 12; }
@@ -252,6 +255,14 @@ select.orgsel { max-width: 260px; }
   .ticket-row select { width: 100%; }
   .pos-head-compact { align-items: flex-start; }
   .pos-tip { display: none; }
-  .pos-search { flex-direction: column; }
-  .pos-search input { width: 100%; }
+  .pos-products { max-height: none; }
+  .pos-products .prod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  .prod { padding: .65rem; }
+  .add-round { width: 44px; height: 44px; }
+  .pos-search { flex-direction: row; }
+  .pos-search input { width: 100%; min-width: 0; }
+  .pos-cart { position: sticky; bottom: 4.35rem; z-index: 25; max-height: 58dvh; box-shadow: 0 -14px 34px rgba(0,0,0,.38); }
+  .cart-scroll { max-height: 28dvh; }
+  .pay-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pay-btn { padding: .55rem .2rem; font-size: .68rem; }
 }
