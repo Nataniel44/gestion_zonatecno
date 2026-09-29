@@ -80,6 +80,43 @@ async function installApp() {
   ov.onclick = (e) => { if ((e.target as HTMLElement).id === 'mClose' || e.target === ov) ov.remove(); };
   document.body.appendChild(ov);
 }
+const SCANNER_KEY = 'zt_scanner_settings';
+type ScannerSettings = { enabled: boolean; suffix: 'Enter' | 'Tab'; minLength: number };
+const defaultScanner = (): ScannerSettings => ({ enabled: true, suffix: 'Enter', minLength: 6 });
+const getScannerSettings = (): ScannerSettings => {
+  try { return { ...defaultScanner(), ...JSON.parse(localStorage.getItem(SCANNER_KEY) || '{}') }; }
+  catch { return defaultScanner(); }
+};
+const setScannerSettings = (value: ScannerSettings) => localStorage.setItem(SCANNER_KEY, JSON.stringify(value));
+let barcodeHandler: ((code: string) => void) | null = null;
+
+function initScanner() {
+  let buffer = '';
+  let timer = 0;
+  const emit = () => {
+    const code = buffer.trim();
+    buffer = '';
+    if (code) document.dispatchEvent(new CustomEvent('zt:barcode', { detail: code }));
+  };
+  document.addEventListener('keydown', (event) => {
+    const settings = getScannerSettings();
+    if (!settings.enabled) return;
+    const target = event.target as HTMLElement;
+    const inField = target?.matches?.('input, textarea, select') || target?.isContentEditable;
+    if (inField && !target.hasAttribute('data-scanner-input')) return;
+    if (target?.id === 'q2') return;
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      if (buffer.length >= settings.minLength) { event.preventDefault(); emit(); }
+      return;
+    }
+    if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return;
+    clearTimeout(timer);
+    buffer += event.key;
+    if (settings.suffix === 'Enter') timer = window.setTimeout(() => { if (buffer.length >= settings.minLength) emit(); }, 120);
+  });
+  document.addEventListener('zt:barcode', (event) => barcodeHandler?.((event as CustomEvent<string>).detail));
+}
+
 function scanBarcode(): Promise<string | null> {
   return new Promise((resolve) => {
     const ov = document.createElement('div');
@@ -572,7 +609,8 @@ async function vProductos(q = '') {
     rows = await db.products.where('org_id').equals(org).toArray();
   }
   const ql = q.toLowerCase();
-  const view = rows.filter((p) => !ql || p.name.toLowerCase().includes(ql)).sort((a, b) => a.name.localeCompare(b.name));
+  const scanner = getScannerSettings();
+  const view = rows.filter((p) => !ql || `${p.name} ${p.barcode ?? ''}`.toLowerCase().includes(ql)).sort((a, b) => a.name.localeCompare(b.name));
   app.innerHTML = shell(`
   <div class="card"><div class="row" style="justify-content:space-between">
     <div class="row"><input id="q" placeholder="Buscar producto…" value="${esc(q)}" style="max-width:260px"/></div>
@@ -588,7 +626,8 @@ async function vProductos(q = '') {
     <input id="fPrice" type="number" min="0" placeholder="Precio" /><input id="fStock" type="number" min="0" placeholder="Stock" />
     <input id="fMin" type="number" min="0" placeholder="Alerta mínimo (ej 3)" /><div class="field"><label>Código de barras</label><div class="row" style="flex-wrap:nowrap"><input id="fBarcode" inputmode="numeric" placeholder="Opcional" style="flex:1"/><button class="btn ghost small" id="bScanBarcode" title="Escanear">📷</button></div></div></div>
     <div class="row" style="margin-top:.6rem"><button class="btn small" id="bSave">Guardar (offline OK)</button><button class="btn ghost small" id="bCancel">Cancelar</button></div>
-  </div>`, 'productos', { orgs: list, org, email: (user as any)?.email });
+  </div>
+  <div class="card scanner-settings"><div class="row" style="justify-content:space-between"><div><h3>⌨ Lector LED / código de barras</h3><p class="mut">Configurá cómo termina el lector. La mayoría usa Enter.</p></div><span id="scannerStatus" class="pill ${scanner.enabled ? 'ok' : 'warn'}">${scanner.enabled ? 'Activado' : 'Desactivado'}</span></div><div class="grid2"><div class="field"><label>Activar lector</label><select id="scannerEnabled"><option value="1" ${scanner.enabled ? 'selected' : ''}>Sí</option><option value="0" ${!scanner.enabled ? 'selected' : ''}>No</option></select></div><div class="field"><label>Termina con</label><select id="scannerSuffix"><option value="Enter" ${scanner.suffix === 'Enter' ? 'selected' : ''}>Enter</option><option value="Tab" ${scanner.suffix === 'Tab' ? 'selected' : ''}>Tab</option></select></div></div><div class="row" style="margin-top:.6rem"><button class="btn small" id="bSaveScanner">Guardar configuración</button></div></div>`, 'productos', { orgs: list, org, email: (user as any)?.email });
   bindCommon(list, org);
   (document.getElementById('q') as HTMLInputElement).oninput = (e) => {
     const query = (e.target as HTMLInputElement).value.trim().toLowerCase();
@@ -605,6 +644,10 @@ async function vProductos(q = '') {
     (document.getElementById('fPrice') as HTMLInputElement).value = ''; (document.getElementById('fStock') as HTMLInputElement).value = ''; (document.getElementById('fMin') as HTMLInputElement).value = '3';
     (document.getElementById('fBarcode') as HTMLInputElement).value = '';
   });
+  (document.getElementById('bSaveScanner') as HTMLButtonElement).onclick = () => {
+    setScannerSettings({ enabled: (document.getElementById('scannerEnabled') as HTMLSelectElement).value === '1', suffix: (document.getElementById('scannerSuffix') as HTMLSelectElement).value as 'Enter' | 'Tab', minLength: 6 });
+    toast('Configuración del lector guardada'); router();
+  };
   (document.getElementById('bCancel') as HTMLButtonElement).onclick = () => ((document.getElementById('editor') as HTMLElement).style.display = 'none');
   (document.getElementById('bScanBarcode') as HTMLButtonElement).onclick = async () => {
     const code = await scanBarcode();
@@ -654,10 +697,18 @@ async function vVentas() {
   const org = cur;
   const prods = (await db.products.where('org_id').equals(org).toArray()).filter((p) => !p.deleted).sort((a, b) => a.name.localeCompare(b.name));
   const cart = new Map<string, number>();
+  barcodeHandler = (code) => {
+    const p = prods.find((x) => x.barcode === code || x.id === code);
+    if (!p) { toast('No encontré ese código en el stock'); return; }
+    if (p.stock <= 0) { toast('Ese producto no tiene stock'); return; }
+    cart.set(p.id, Math.min(p.stock, (cart.get(p.id) ?? 0) + 1));
+    toast(`${p.name} agregado`);
+    render();
+  };
   app.innerHTML = shell(`
   <div class="pos">
     <div class="card"><h2>Productos</h2>
-      <div class="row" style="margin-bottom:.6rem"><input id="q2" placeholder="Buscar producto o código…" style="max-width:280px"/><button class="btn ghost small" id="bScanPos">📷 Escanear</button></div>
+      <div class="row" style="margin-bottom:.6rem"><input id="q2" placeholder="Escaneá con el lector LED o escribí el código…" data-scanner-input style="max-width:320px"/><button class="btn ghost small" id="bScanPos">📷 Cámara</button></div>
       <div class="prod-grid" id="pg">${prods.map((p) => `
         <div class="card prod" data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><b>${esc(p.name)}</b>
         <span class="mut">${fmt(p.price)} · ${p.stock} un.</span>
@@ -1039,6 +1090,7 @@ export async function router() {
   refreshInstallUI();
 }
 
+initScanner();
 addEventListener('hashchange', router);
 
 // ---- Vigía de conexión: barra offline, recarga sola y botón reintentar ----
