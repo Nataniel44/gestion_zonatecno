@@ -708,7 +708,7 @@ async function vVentas() {
   let payMethod = 'efectivo';
   app.innerHTML = shell(`
   <div class="pos-page">
-    <div class="pos-head-compact"><div><h1>Vender</h1><p>Buscá un producto o ingresá su código.</p></div><span class="pos-tip">Lector LED · Cámara</span></div>
+    <div class="pos-subhead"><p>Buscá un producto o ingresá su código.</p><span class="pos-tip">Lector LED · Cámara</span></div>
     <div class="pos-layout">
       <section class="card pos-products"><div class="pos-search"><input id="q2" data-scanner-input placeholder="Buscar producto o código…" aria-label="Buscar producto o código" /><button class="btn ghost" id="bScanPos">Cámara</button></div><div class="prod-grid" id="pg">${prods.map((p) => `
         <div class="card prod" data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><div class="prod-info"><b>${esc(p.name)}</b><span class="mut">${fmt(p.price)} · ${p.stock > 0 ? `Stock ${p.stock}` : 'Sin stock'}</span></div><button class="add-btn" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>${p.stock <= 0 ? 'Sin stock' : 'Agregar'}</button></div>`).join('') || '<div class="empty-dashboard">Todavía no hay productos. Pedile al dueño que cargue el stock.</div>'}</div></section>
