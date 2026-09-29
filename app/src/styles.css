@@ -108,7 +108,7 @@ th { color: var(--mut); font-size: .75rem; text-transform: uppercase; letter-spa
 .pos-products { min-width: 0; }
 .pos-search { display: flex; gap: .5rem; margin-bottom: .8rem; }
 .pos-search input { flex: 1; }
-.pos-cart { position: sticky; top: 1rem; }
+.pos-cart { position: sticky; top: .6rem; }
 .cart-head { display: flex; justify-content: space-between; align-items: start; gap: 1rem; margin-bottom: .5rem; }
 .cart-head h2 { font-size: 1.25rem; margin: .1rem 0 0; }
 .cart-lines { display: grid; gap: .45rem; }
