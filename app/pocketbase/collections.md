@@ -44,6 +44,7 @@ aplicar estas reglas en el servidor:
 - `min_stock`: number, default 3
 - `category`: text, default `general`
 - `active`: bool, default true
+- `barcode`: text — código de barras para lector
 - `local_id`: text — evita duplicar un producto creado offline
 
 ## 4. clients (base)
@@ -87,6 +88,20 @@ aplicar estas reglas en el servidor:
 - `code`, `client_name`, `phone`, `device`, `problem`: text
 - `status`: select → `recibido`, `revisado`, `reparando`, `listo`, `entregado`
 - `price`: number
+- `local_id`: text — evita duplicar tickets
+
+## 9. cash_days (base)
+
+- `org`: relation → `orgs`, required
+- `day`: text — día `YYYY-MM-DD`
+- `open_amount`: number
+- `opened_at`: text
+- `closed_at`: text
+- `close_amount`: number
+- `expected_cash`: number
+- `difference`: number
+- `note`: text
+- `local_id`: text
 
 ## users
 

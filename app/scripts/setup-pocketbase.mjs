@@ -29,6 +29,7 @@ const R = {
   sale_items: { listRule: SALE, viewRule: SALE, createRule: SALE, updateRule: SALE_ADMIN, deleteRule: SALE_ADMIN },
   stock_moves: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ADMIN, deleteRule: ADMIN },
   tickets: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
+  cash_days: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ADMIN, deleteRule: ADMIN },
 };
 const T = (name, required = false) => ({ name, type: 'text', required });
 const N = (name) => ({ name, type: 'number' });
@@ -55,12 +56,13 @@ function* defs(ids) {
   // resolver el ID de cada colección antes de crear la siguiente.
   yield { name: 'orgs', type: 'base', fields: [T('name', true), T('slug'), Rel('owner', ids.users, false, { maxSelect: 1 }), Rel('members', ids.users), Rel('admins', ids.users), T('plan'), B('active')] };
   yield { name: 'memberships', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1, cascadeDelete: true }), Rel('user', ids.users, true, { maxSelect: 1 }), S('role', ['dueno', 'admin', 'vendedor']), T('label_name'), T('label_email')] };
-  yield { name: 'products', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), T('name', true), N('price'), N('stock'), N('min_stock'), T('category'), B('active'), T('local_id')] };
+  yield { name: 'products', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), T('name', true), N('price'), N('stock'), N('min_stock'), T('category'), T('barcode'), B('active'), T('local_id')] };
   yield { name: 'clients', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), T('name', true), T('phone'), T('note')] };
   yield { name: 'sales', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), N('total'), T('pay_method'), T('channel'), T('created_by'), T('local_id'), T('occurred_at')] };
   yield { name: 'sale_items', type: 'base', fields: [Rel('sale', ids.sales, true, { maxSelect: 1, cascadeDelete: true }), Rel('product', ids.products, false, { maxSelect: 1 }), T('name'), N('qty'), N('price'), T('local_id')] };
   yield { name: 'stock_moves', type: 'base', fields: [Rel('org', ids.orgs, false, { maxSelect: 1 }), Rel('product', ids.products, false, { maxSelect: 1 }), N('qty'), T('reason'), T('ref'), T('local_id')] };
-  yield { name: 'tickets', type: 'base', fields: [Rel('org', ids.orgs, false, { maxSelect: 1 }), T('code'), T('client_name'), T('phone'), T('device'), T('problem'), S('status', ['recibido', 'revisado', 'reparando', 'listo', 'entregado']), N('price')] };
+  yield { name: 'tickets', type: 'base', fields: [Rel('org', ids.orgs, false, { maxSelect: 1 }), T('code'), T('client_name'), T('phone'), T('device'), T('problem'), S('status', ['recibido', 'revisado', 'reparando', 'listo', 'entregado']), N('price'), T('local_id')] };
+  yield { name: 'cash_days', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1, cascadeDelete: true }), T('day'), N('open_amount'), T('opened_at'), T('closed_at'), N('close_amount'), N('expected_cash'), N('difference'), T('note'), T('local_id')] };
 }
 
 try {

@@ -1,5 +1,5 @@
 import { pb, isCloudConfigured } from './pb';
-import { db, uid, type LocalProduct, type OutboxSale } from './localdb';
+import { db, uid, type LocalProduct, type OutboxSale, type LocalTicket, type LocalCashDay } from './localdb';
 
 export interface Org { id: string; name: string; slug: string; }
 export interface Membership { org_id: string; role: string; orgs: Org; }
@@ -142,6 +142,7 @@ const productFromCloud = (p: any, org_id: string, now: number): LocalProduct => 
   stock: Number(p.stock),
   min_stock: Number(p.min_stock ?? 3),
   category: p.category ?? 'general',
+  barcode: p.barcode ?? '',
   updatedAt: now
 });
 
@@ -198,7 +199,7 @@ async function ensureProductRemote(local: LocalProduct): Promise<string | null> 
     try {
       await pb.collection('products').update(local.id, {
         org: local.org_id, name: local.name, price: local.price, stock: local.stock,
-        min_stock: local.min_stock, category: local.category, active: true,
+        min_stock: local.min_stock, category: local.category, barcode: local.barcode ?? '', active: true,
         local_id: local.id
       });
       return local.id;
@@ -216,7 +217,7 @@ async function ensureProductRemote(local: LocalProduct): Promise<string | null> 
     if (!isNotFound(existingError)) throw existingError;
     created = await pb.collection('products').create({
       org: local.org_id, name: local.name || '(sin nombre)', price: local.price, stock: local.stock,
-      min_stock: local.min_stock, category: local.category, active: true, local_id: local.id
+      min_stock: local.min_stock, category: local.category, barcode: local.barcode ?? '', active: true, local_id: local.id
     });
   }
 
@@ -456,6 +457,8 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
       await db.outbox.put(s);
     }
   }
+  await pushTickets(org_id);
+  await pushCashDays(org_id);
   return { synced: ok, pending: await db.outbox.where('org_id').equals(org_id).count() };
 }
 
@@ -468,6 +471,88 @@ export async function salesHistoryCloud(org_id: string, limit = 50) {
       created_at: h.occurred_at ?? h.created ?? h.updated ?? h.id
     }));
   } catch { return []; }
+}
+
+// ---- Tickets de taller ----
+export const TICKET_STATUSES: LocalTicket['status'][] = ['recibido', 'revisado', 'reparando', 'listo', 'entregado'];
+
+export async function pullTickets(org_id: string) {
+  if (!isCloudConfigured() || !navigator.onLine || !pb.authStore.isValid) {
+    return db.tickets.where('org_id').equals(org_id).reverse().sortBy('createdAt');
+  }
+  try {
+    const rows = await pb.collection('tickets').getFullList({ filter: `org="${org_id}"`, sort: '-created' });
+    const local = rows.map((t: any) => ({
+      id: t.id, org_id, code: t.code, client_name: t.client_name ?? '', phone: t.phone ?? '',
+      device: t.device ?? '', problem: t.problem ?? '', status: (t.status ?? 'recibido') as LocalTicket['status'],
+      price: Number(t.price ?? 0), local_id: t.local_id ?? t.id, dirty: 0, createdAt: new Date(t.created ?? Date.now()).getTime(), updatedAt: Date.now()
+    }));
+    await db.tickets.bulkPut(local);
+    return db.tickets.where('org_id').equals(org_id).reverse().sortBy('createdAt');
+  } catch { return db.tickets.where('org_id').equals(org_id).reverse().sortBy('createdAt'); }
+}
+
+export async function createTicket(org_id: string, data: Omit<LocalTicket, 'id' | 'org_id' | 'code' | 'local_id' | 'createdAt' | 'updatedAt'>) {
+  const ticket: LocalTicket = { ...data, id: uid(), org_id, code: `ZT-${Date.now().toString(36).toUpperCase().slice(-5)}`, local_id: uid(), createdAt: Date.now(), updatedAt: Date.now(), dirty: 1 };
+  await db.tickets.add(ticket);
+  void pushTickets(org_id).catch(() => undefined);
+  return ticket;
+}
+
+export async function updateTicketStatus(org_id: string, id: string, status: LocalTicket['status']) {
+  const ticket = await db.tickets.get(id);
+  if (!ticket) return;
+  await db.tickets.update(id, { status, dirty: 1, updatedAt: Date.now() });
+  void pushTickets(org_id).catch(() => undefined);
+}
+
+export async function pushTickets(org_id: string) {
+  if (!isCloudConfigured() || !navigator.onLine || !pb.authStore.isValid) return;
+  const rows = await db.tickets.where('org_id').equals(org_id).filter((t) => t.dirty === 1).toArray();
+  for (const t of rows) {
+    try {
+      let remote: any = null;
+      try { remote = await pb.collection('tickets').getFirstListItem(`org="${org_id}" && local_id="${t.local_id}"`); }
+      catch (e) { if (!isNotFound(e)) throw e; }
+      const payload = { org: org_id, code: t.code, client_name: t.client_name, phone: t.phone, device: t.device, problem: t.problem, status: t.status, price: t.price, local_id: t.local_id };
+      if (remote) await pb.collection('tickets').update(remote.id, payload);
+      else await pb.collection('tickets').create(payload);
+      await db.tickets.update(t.id, { dirty: 0, lastError: '' });
+    } catch (e) { await db.tickets.update(t.id, { lastError: errorText(e, 'ticket') }); }
+  }
+}
+
+// ---- Caja diaria ----
+export async function getCashDay(org_id: string, day = new Date().toISOString().slice(0, 10)) {
+  return db.cashDays.where('org_id').equals(org_id).and((c) => c.day === day).first();
+}
+export async function openCashDay(org_id: string, open_amount: number) {
+  const day = new Date().toISOString().slice(0, 10);
+  const existing = await getCashDay(org_id, day);
+  if (existing && !existing.closed_at) return existing;
+  const cash: LocalCashDay = { id: uid(), org_id, day, open_amount, opened_at: Date.now(), updatedAt: Date.now(), dirty: 1 };
+  await db.cashDays.put(cash);
+  void pushCashDays(org_id).catch(() => undefined);
+  return cash;
+}
+export async function closeCashDay(org_id: string, id: string, close_amount: number, expected_cash: number, note = '') {
+  await db.cashDays.update(id, { closed_at: Date.now(), close_amount, expected_cash, difference: close_amount - expected_cash, note, dirty: 1, updatedAt: Date.now() });
+  void pushCashDays(org_id).catch(() => undefined);
+}
+export async function pushCashDays(org_id: string) {
+  if (!isCloudConfigured() || !navigator.onLine || !pb.authStore.isValid) return;
+  const rows = await db.cashDays.where('org_id').equals(org_id).filter((c) => c.dirty === 1).toArray();
+  for (const c of rows) {
+    try {
+      const payload = { org: org_id, day: c.day, open_amount: c.open_amount, opened_at: new Date(c.opened_at).toISOString(), closed_at: c.closed_at ? new Date(c.closed_at).toISOString() : '', close_amount: c.close_amount ?? 0, expected_cash: c.expected_cash ?? 0, difference: c.difference ?? 0, note: c.note ?? '', local_id: c.id };
+      let remote: any = null;
+      try { remote = await pb.collection('cash_days').getFirstListItem(`org="${org_id}" && day="${c.day}"`); }
+      catch (e) { if (!isNotFound(e)) throw e; }
+      if (remote) await pb.collection('cash_days').update(remote.id, payload);
+      else await pb.collection('cash_days').create(payload);
+      await db.cashDays.update(c.id, { dirty: 0, lastError: '' });
+    } catch (e) { await db.cashDays.update(c.id, { lastError: errorText(e, 'caja') }); }
+  }
 }
 
 // ---- PIN offline (caja sin internet) ----

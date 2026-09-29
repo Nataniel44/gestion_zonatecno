@@ -5,7 +5,8 @@ import {
   signIn, signUp, signOut, getUser, refreshSession, verifyAccountPassword, myOrgs, createOrg, addMemberById,
   pullProducts, saveProductLocal, deleteProductLocal, newLocalProduct,
   createSaleOffline, syncOutbox, salesHistoryCloud, listMembers,
-  hashPin, setLocalSession, getLocalSession
+  hashPin, setLocalSession, getLocalSession,
+  TICKET_STATUSES, pullTickets, createTicket, updateTicketStatus, getCashDay, openCashDay, closeCashDay
 } from './lib/store';
 
 const app = document.getElementById('app')!;
@@ -79,6 +80,44 @@ async function installApp() {
   ov.onclick = (e) => { if ((e.target as HTMLElement).id === 'mClose' || e.target === ov) ov.remove(); };
   document.body.appendChild(ov);
 }
+function scanBarcode(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.className = 'ovl';
+    ov.innerHTML = `<div class="card modal-card scanner-card"><h2>Escanear producto</h2><p class="mut">Apuntá la cámara al código de barras o escribilo a mano.</p><video id="scanVideo" autoplay playsinline muted></video><div class="field"><label>Código</label><input id="scanCode" inputmode="numeric" placeholder="Ej: 7791234567890" /></div><div class="row" style="margin-top:.6rem"><button class="btn" id="scanOk">Usar código</button><button class="btn ghost" id="scanCancel">Cancelar</button></div></div>`;
+    document.body.appendChild(ov);
+    const video = document.getElementById('scanVideo') as HTMLVideoElement;
+    const input = document.getElementById('scanCode') as HTMLInputElement;
+    let stream: MediaStream | null = null;
+    let done = false;
+    const finish = (value: string | null) => {
+      if (done) return;
+      done = true;
+      stream?.getTracks().forEach((track) => track.stop());
+      ov.remove();
+      resolve(value?.trim() || null);
+    };
+    (document.getElementById('scanCancel') as HTMLButtonElement).onclick = () => finish(null);
+    (document.getElementById('scanOk') as HTMLButtonElement).onclick = () => finish(input.value);
+    const Detector = (window as any).BarcodeDetector;
+    if (Detector && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } }).then(async (s) => {
+        stream = s; video.srcObject = s;
+        const detector = new Detector({ formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e', 'qr_code'] });
+        const scan = async () => {
+          if (done) return;
+          try {
+            const codes = await detector.detect(video);
+            if (codes[0]?.rawValue) { input.value = codes[0].rawValue; finish(codes[0].rawValue); return; }
+          } catch { /* seguimos con entrada manual */ }
+          requestAnimationFrame(scan);
+        };
+        scan();
+      }).catch(() => { /* cámara no disponible: manual */ });
+    }
+  });
+}
+
 document.addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('[data-install]')) installApp();
 });
@@ -102,6 +141,8 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
         <a href="#/panel" class="${tab === 'panel' ? 'on' : ''}">◧ Panel</a>
         <a href="#/ventas" class="${tab === 'ventas' ? 'on' : ''}">◉ Vender</a>
         <a href="#/productos" class="${tab === 'productos' ? 'on' : ''}">▤ Stock</a>
+        <a href="#/caja" class="${tab === 'caja' ? 'on' : ''}">💵 Caja</a>
+        <a href="#/tickets" class="${tab === 'tickets' ? 'on' : ''}">🧾 Tickets</a>
         <a href="#/equipo" class="${tab === 'equipo' ? 'on' : ''}">⛁ Equipo</a>
         ${isOwner ? `<a href="#/admin" class="${tab === 'admin' ? 'on' : ''}">⚙ Admin</a>` : ''}
         <button class="navdl" data-install>⬇ Descargar app</button>
@@ -126,6 +167,8 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
         <a href="#/panel" class="${tab === 'panel' ? 'on' : ''}">Panel</a>
         <a href="#/ventas" class="${tab === 'ventas' ? 'on' : ''}">Vender</a>
         <a href="#/productos" class="${tab === 'productos' ? 'on' : ''}">Stock</a>
+        <a href="#/caja" class="${tab === 'caja' ? 'on' : ''}">Caja</a>
+        <a href="#/tickets" class="${tab === 'tickets' ? 'on' : ''}">Tickets</a>
         <a href="#/equipo" class="${tab === 'equipo' ? 'on' : ''}">Equipo</a>
         ${isOwner ? `<a href="#/admin" class="${tab === 'admin' ? 'on' : ''}">Admin</a>` : ''}
       </nav>
@@ -536,14 +579,14 @@ async function vProductos(q = '') {
     ${canManageProducts ? '<button class="btn small" id="bNew">+ Producto</button>' : '<span class="pill">Solo lectura para vendedores</span>'}
   </div>
   <div style="margin-top:.7rem"><table><tr><th>Producto</th><th>Precio</th><th>Stock</th><th></th></tr>
-  <tbody id="productRows">${view.map((p) => `<tr data-name="${esc(p.name.toLowerCase())}"><td><b>${esc(p.name || '(sin nombre)')}</b>${p.dirty ? ' <span class="pill warn">sin subir</span>' : ''}${p.lastError ? ' <span class="pill bad">revisar</span>' : ''}<br/><span class="mut">${esc(p.category)}${p.lastError ? ' · ' + esc(p.lastError) : ''}</span></td>
+  <tbody id="productRows">${view.map((p) => `<tr data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><td><b>${esc(p.name || '(sin nombre)')}</b>${p.dirty ? ' <span class="pill warn">sin subir</span>' : ''}${p.lastError ? ' <span class="pill bad">revisar</span>' : ''}<br/><span class="mut">${esc(p.category)}${p.lastError ? ' · ' + esc(p.lastError) : ''}</span></td>
     <td>${fmt(p.price)}</td><td class="${p.stock <= p.min_stock ? 'low' : ''}">${p.stock}</td>
     <td style="white-space:nowrap">${canManageProducts ? `<button class="btn ghost small" data-edit="${p.id}">Editar</button> <button class="btn ghost small" data-del="${p.id}">Borrar</button>` : '<span class="mut">—</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="mut">Sin productos. Creá el primero con + Producto.</td></tr>'}
   </tbody></table></div></div>
   <div class="card" id="editor" style="display:none"><h2 id="edT">Producto</h2>
     <div class="grid2"><input id="fName" placeholder="Nombre *" /><input id="fCat" placeholder="Categoría" />
     <input id="fPrice" type="number" min="0" placeholder="Precio" /><input id="fStock" type="number" min="0" placeholder="Stock" />
-    <input id="fMin" type="number" min="0" placeholder="Alerta mínimo (ej 3)" /></div>
+    <input id="fMin" type="number" min="0" placeholder="Alerta mínimo (ej 3)" /><div class="field"><label>Código de barras</label><div class="row" style="flex-wrap:nowrap"><input id="fBarcode" inputmode="numeric" placeholder="Opcional" style="flex:1"/><button class="btn ghost small" id="bScanBarcode" title="Escanear">📷</button></div></div></div>
     <div class="row" style="margin-top:.6rem"><button class="btn small" id="bSave">Guardar (offline OK)</button><button class="btn ghost small" id="bCancel">Cancelar</button></div>
   </div>`, 'productos', { orgs: list, org, email: (user as any)?.email });
   bindCommon(list, org);
@@ -560,8 +603,13 @@ async function vProductos(q = '') {
     editing = null; openEd('Nuevo producto');
     (document.getElementById('fName') as HTMLInputElement).value = ''; (document.getElementById('fCat') as HTMLInputElement).value = 'general';
     (document.getElementById('fPrice') as HTMLInputElement).value = ''; (document.getElementById('fStock') as HTMLInputElement).value = ''; (document.getElementById('fMin') as HTMLInputElement).value = '3';
+    (document.getElementById('fBarcode') as HTMLInputElement).value = '';
   });
   (document.getElementById('bCancel') as HTMLButtonElement).onclick = () => ((document.getElementById('editor') as HTMLElement).style.display = 'none');
+  (document.getElementById('bScanBarcode') as HTMLButtonElement).onclick = async () => {
+    const code = await scanBarcode();
+    if (code) (document.getElementById('fBarcode') as HTMLInputElement).value = code;
+  };
   document.querySelectorAll('[data-edit]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
     if (!await ensureProductAuth()) return;
     editing = (b as HTMLButtonElement).dataset.edit!;
@@ -572,6 +620,7 @@ async function vProductos(q = '') {
     (document.getElementById('fPrice') as HTMLInputElement).value = String(p.price);
     (document.getElementById('fStock') as HTMLInputElement).value = String(p.stock);
     (document.getElementById('fMin') as HTMLInputElement).value = String(p.min_stock);
+    (document.getElementById('fBarcode') as HTMLInputElement).value = p.barcode ?? '';
   });
   document.querySelectorAll('[data-del]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
     if (!await ensureProductAuth()) return;
@@ -590,6 +639,7 @@ async function vProductos(q = '') {
     base.price = Number((document.getElementById('fPrice') as HTMLInputElement).value || 0);
     base.stock = Number((document.getElementById('fStock') as HTMLInputElement).value || 0);
     base.min_stock = Number((document.getElementById('fMin') as HTMLInputElement).value || 3);
+    base.barcode = (document.getElementById('fBarcode') as HTMLInputElement).value.trim();
     await saveProductLocal(base);
     toast('Guardado' + (navigator.onLine ? '' : ' offline'));
     router();
@@ -607,9 +657,9 @@ async function vVentas() {
   app.innerHTML = shell(`
   <div class="pos">
     <div class="card"><h2>Productos</h2>
-      <div class="row" style="margin-bottom:.6rem"><input id="q2" placeholder="Buscar para vender…" style="max-width:280px"/></div>
+      <div class="row" style="margin-bottom:.6rem"><input id="q2" placeholder="Buscar producto o código…" style="max-width:280px"/><button class="btn ghost small" id="bScanPos">📷 Escanear</button></div>
       <div class="prod-grid" id="pg">${prods.map((p) => `
-        <div class="card prod" data-name="${esc(p.name.toLowerCase())}"><b>${esc(p.name)}</b>
+        <div class="card prod" data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><b>${esc(p.name)}</b>
         <span class="mut">${fmt(p.price)} · ${p.stock} un.</span>
         <button class="btn small" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>${p.stock <= 0 ? 'Sin stock' : '+ Agregar'}</button></div>`).join('') || '<p class="mut">Sin productos. Cargalos en Stock.</p>'}</div>
     </div>
@@ -661,6 +711,15 @@ async function vVentas() {
     if (!p || next > p.stock) { toast(`Stock máximo: ${p?.stock ?? 0}`); return; }
     cart.set(id, next); render();
   });
+  (document.getElementById('bScanPos') as HTMLButtonElement).onclick = async () => {
+    const code = await scanBarcode();
+    if (!code) return;
+    const p = prods.find((x) => x.barcode === code || x.id === code);
+    if (!p) { toast('No encontré ese código en el stock'); return; }
+    if (p.stock <= 0) { toast('Ese producto no tiene stock'); return; }
+    cart.set(p.id, Math.min(p.stock, (cart.get(p.id) ?? 0) + 1));
+    toast(`${p.name} agregado`); render();
+  };
   (document.getElementById('q2') as HTMLInputElement).oninput = (e) => {
     const q = (e.target as HTMLInputElement).value.toLowerCase();
     document.querySelectorAll('#pg .prod').forEach((el) => {
@@ -694,6 +753,69 @@ function confirmActionPassword(email: string): Promise<boolean> {
       finish(true);
     };
     (document.getElementById('confirmPw') as HTMLInputElement).focus();
+  });
+}
+
+// ---------- Caja diaria ----------
+async function vCaja() {
+  const user = await requireUser();
+  const { list, cur, cloudError } = await loadOrgs();
+  if (cloudError || !cur) { location.hash = '#/panel'; return; }
+  const org = cur;
+  const role = list.find((o) => o.id === org)?.role ?? 'vendedor';
+  const canManageCash = role === 'dueno' || role === 'admin';
+  const day = new Date().toISOString().slice(0, 10);
+  const cash = await getCashDay(org, day);
+  const pend = await db.outbox.where('org_id').equals(org).toArray();
+  const hist = await salesHistoryCloud(org, 50).catch(() => []);
+  const sameDay = (value: unknown) => new Date(value as string).toDateString() === new Date().toDateString();
+  const cashSales = [...pend, ...hist].filter((s: any) => s.pay_method === 'efectivo' && sameDay(s.created_at ?? s.createdAt)).reduce((sum, s: any) => sum + Number(s.total || 0), 0);
+  const expected = (cash?.open_amount ?? 0) + cashSales;
+  const openAmount = cash?.open_amount ?? 0;
+  app.innerHTML = shell(`<div class="bento">
+    <div class="card span8"><h2>Caja de hoy</h2><p class="mut">${cash ? (cash.closed_at ? 'Caja cerrada por hoy.' : 'Caja abierta. Podés seguir vendiendo.') : 'Todavía no abriste la caja de hoy.'}</p>${cash ? `<div class="cash-summary"><div><span>Apertura</span><b>${fmt(openAmount)}</b></div><div><span>Efectivo esperado</span><b>${fmt(expected)}</b></div><div><span>${cash.closed_at ? 'Cierre' : 'Diferencia'}</span><b>${cash.closed_at ? fmt(cash.close_amount ?? 0) : '—'}</b></div></div>` : ''}</div>
+    <div class="card span4"><h3>${cash?.closed_at ? 'Abrir mañana' : 'Abrir caja'}</h3>${!cash || cash.closed_at ? `<div class="field"><label>Monto inicial</label><input id="openAmount" type="number" min="0" placeholder="Ej: 5000" /></div><button class="btn small" id="bOpenCash">Abrir caja</button>` : cash.closed_at ? '<p class="mut">La caja de hoy ya está cerrada.</p>' : `<p class="mut">Caja abierta desde ${new Date(cash.opened_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}.</p>`}</div>
+    ${cash && !cash.closed_at ? `<div class="card span12"><h3>Cerrar caja</h3><div class="grid2"><div class="field"><label>Con cuánto dinero cerrás</label><input id="closeAmount" type="number" min="0" value="${expected}" /></div><div class="field"><label>Nota (opcional)</label><input id="cashNote" placeholder="Ej: conté con Ana" /></div></div><p class="mut">Esperado: <b>${fmt(expected)}</b>. Diferencia: se calcula al cerrar.</p><button class="btn small" id="bCloseCash">Cerrar caja</button></div>` : ''}
+  </div>`, 'caja', { orgs: list, org, email: (user as any)?.email });
+  bindCommon(list, org);
+  (document.getElementById('bOpenCash') as HTMLButtonElement | null)?.addEventListener('click', async () => {
+    if (!canManageCash || !await confirmActionPassword((user as any)?.email ?? '')) return;
+    const amount = Number((document.getElementById('openAmount') as HTMLInputElement).value || 0);
+    await openCashDay(org, amount); toast('Caja abierta'); router();
+  });
+  (document.getElementById('bCloseCash') as HTMLButtonElement | null)?.addEventListener('click', async () => {
+    if (!canManageCash || !await confirmActionPassword((user as any)?.email ?? '')) return;
+    const amount = Number((document.getElementById('closeAmount') as HTMLInputElement).value || 0);
+    const note = (document.getElementById('cashNote') as HTMLInputElement).value.trim();
+    await closeCashDay(org, cash!.id, amount, expected, note); toast('Caja cerrada'); router();
+  });
+}
+
+// ---------- Tickets de taller ----------
+async function vTickets() {
+  const user = await requireUser();
+  const { list, cur, cloudError } = await loadOrgs();
+  if (cloudError || !cur) { location.hash = '#/panel'; return; }
+  const org = cur;
+  const tickets = await pullTickets(org);
+  app.innerHTML = shell(`<div class="bento">
+    <div class="card span12"><div class="row" style="justify-content:space-between"><div><h2>Tickets de taller</h2><p class="mut">Anotá el equipo, el problema y cambiá el estado cuando advances.</p></div><button class="btn small" id="bNewTicket">+ Nuevo ticket</button></div></div>
+    <div class="card span12" id="ticketEditor" style="display:none"><h3>Nuevo ticket</h3><div class="grid2"><div class="field"><label>Cliente</label><input id="tClient" placeholder="Nombre del cliente" /></div><div class="field"><label>WhatsApp</label><input id="tPhone" inputmode="tel" placeholder="3755 00-0000" /></div><div class="field"><label>Equipo</label><input id="tDevice" placeholder="Ej: Samsung A12" /></div><div class="field"><label>Precio</label><input id="tPrice" type="number" min="0" placeholder="0" /></div></div><div class="field" style="margin-top:.6rem"><label>Problema</label><textarea id="tProblem" rows="2" placeholder="Contá brevemente qué le pasa"></textarea></div><div class="row" style="margin-top:.6rem"><button class="btn small" id="bSaveTicket">Guardar ticket</button><button class="btn ghost small" id="bCancelTicket">Cancelar</button></div></div>
+    <div class="card span12"><div class="ticket-list">${tickets.length ? tickets.map((t) => `<div class="ticket-row"><div class="ticket-code"><b>${esc(t.code)}</b><small>${esc(t.client_name)} · ${esc(t.device)}</small></div><div><small>${esc(t.problem || 'Sin detalle')}</small><strong>${fmt(t.price)}</strong></div><select data-ticket-status="${t.id}">${TICKET_STATUSES.map((s) => `<option value="${s}" ${s === t.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`).join('') : '<div class="empty-dashboard">🧾 Todavía no hay tickets. Creá el primero.</div>'}</div></div>
+  </div>`, 'tickets', { orgs: list, org, email: (user as any)?.email });
+  bindCommon(list, org);
+  (document.getElementById('bNewTicket') as HTMLButtonElement).onclick = () => ((document.getElementById('ticketEditor') as HTMLElement).style.display = 'block');
+  (document.getElementById('bCancelTicket') as HTMLButtonElement).onclick = () => ((document.getElementById('ticketEditor') as HTMLElement).style.display = 'none');
+  (document.getElementById('bSaveTicket') as HTMLButtonElement).onclick = async () => {
+    const client = (document.getElementById('tClient') as HTMLInputElement).value.trim();
+    const device = (document.getElementById('tDevice') as HTMLInputElement).value.trim();
+    if (!client || !device) { toast('Cargá cliente y equipo'); return; }
+    await createTicket(org, { client_name: client, phone: (document.getElementById('tPhone') as HTMLInputElement).value.trim(), device, problem: (document.getElementById('tProblem') as HTMLInputElement).value.trim(), status: 'recibido', price: Number((document.getElementById('tPrice') as HTMLInputElement).value || 0) });
+    toast('Ticket creado'); router();
+  };
+  document.querySelectorAll('[data-ticket-status]').forEach((el) => (el as HTMLSelectElement).onchange = async (e) => {
+    await updateTicketStatus(org, (e.target as HTMLSelectElement).dataset.ticketStatus!, (e.target as HTMLSelectElement).value as any);
+    toast('Estado actualizado');
   });
 }
 
@@ -894,6 +1016,8 @@ export async function router() {
     else if (h.startsWith('#/productos')) await vProductos();
     else if (h.startsWith('#/ventas')) await vVentas();
     else if (h.startsWith('#/equipo')) await vEquipo();
+    else if (h.startsWith('#/caja')) await vCaja();
+    else if (h.startsWith('#/tickets')) await vTickets();
     else if (h.startsWith('#/admin')) await vAdmin();
     else await vPanel();
   } catch (e: any) {
