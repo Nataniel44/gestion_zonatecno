@@ -225,8 +225,9 @@ select.orgsel { max-width: 260px; }
   .app { grid-template-columns: 1fr; }
   .side { display: none; }
   .main { padding: 1rem 1rem 6rem; }
-  .mobnav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; background: rgba(13,21,32,.96); border-top: 1px solid var(--line); padding: .5rem; gap: .4rem; z-index: 40; }
-  .mobnav a { flex: 1; text-align: center; padding: .6rem .2rem; border-radius: 12px; color: var(--mut); text-decoration: none; font-size: .8rem; font-weight: 700; }
+  .mobnav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; background: rgba(13,21,32,.96); border-top: 1px solid var(--line); padding: .5rem .6rem calc(.5rem + env(safe-area-inset-bottom)); gap: .4rem; z-index: 40; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .mobnav::-webkit-scrollbar { display: none; }
+  .mobnav a { flex: 0 0 auto; min-width: 76px; text-align: center; padding: .6rem .5rem; border-radius: 12px; color: var(--mut); text-decoration: none; font-size: .8rem; font-weight: 700; }
   .mobnav a.on { background: var(--panel2); color: var(--txt); }
   .grid2 { grid-template-columns: 1fr; }
   .span3 { grid-column: span 1; }
