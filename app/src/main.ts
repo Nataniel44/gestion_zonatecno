@@ -705,19 +705,15 @@ async function vVentas() {
     toast(`${p.name} agregado`);
     render();
   };
+  let payMethod = 'efectivo';
   app.innerHTML = shell(`
-  <div class="pos">
-    <div class="card"><h2>Productos</h2>
-      <div class="row" style="margin-bottom:.6rem"><input id="q2" placeholder="Escaneá con el lector LED o escribí el código…" data-scanner-input style="max-width:320px"/><button class="btn ghost small" id="bScanPos">📷 Cámara</button></div>
-      <div class="prod-grid" id="pg">${prods.map((p) => `
-        <div class="card prod" data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><b>${esc(p.name)}</b>
-        <span class="mut">${fmt(p.price)} · ${p.stock} un.</span>
-        <button class="btn small" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>${p.stock <= 0 ? 'Sin stock' : '+ Agregar'}</button></div>`).join('') || '<p class="mut">Sin productos. Cargalos en Stock.</p>'}</div>
+  <div class="pos-page">
+    <div class="pos-hero"><div><div class="eyebrow">Venta rápida</div><h1>¿Qué vendemos hoy?</h1><p>Tocá un producto, escaneá el código o escribí su nombre. Es fácil.</p></div><div class="pos-hero-badge">🛒 <b>Vender</b><small>${navigator.onLine ? 'Con internet' : 'Sin internet · se guarda'}</small></div></div>
+    <div class="pos-layout">
+      <section class="card pos-products"><div class="pos-search"><input id="q2" data-scanner-input placeholder="⌨ Escaneá o buscá un producto…" /><button class="btn ghost" id="bScanPos">📷 Cámara</button></div><div class="prod-grid" id="pg">${prods.map((p) => `
+        <div class="card prod" data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><div class="prod-info"><b>${esc(p.name)}</b><span class="mut">${fmt(p.price)} · ${p.stock > 0 ? `${p.stock} disponibles` : 'Sin stock'}</span></div><button class="add-round" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''} aria-label="Agregar ${esc(p.name)}">+</button></div>`).join('') || '<div class="empty-dashboard">🧺 Todavía no hay productos. Pedile al dueño que cargue el stock.</div>'}</div></section>
+      <aside class="card pos-cart"><div class="cart-head"><div><div class="eyebrow">Pedido actual</div><h2>🧾 Tu venta</h2></div><button class="btn ghost small" id="bClearCart">Vaciar</button></div><div id="cartBox"></div><div class="pay-label">¿Cómo paga?</div><div class="pay-grid"><button class="pay-btn ${payMethod === 'efectivo' ? 'on' : ''}" data-pay="efectivo">💵 Efectivo</button><button class="pay-btn ${payMethod === 'transferencia' ? 'on' : ''}" data-pay="transferencia">📱 Transferencia</button><button class="pay-btn ${payMethod === 'mercadopago' ? 'on' : ''}" data-pay="mercadopago">🏦 MercadoPago</button><button class="pay-btn ${payMethod === 'tarjeta' ? 'on' : ''}" data-pay="tarjeta">💳 Tarjeta</button></div><button class="btn charge-btn" id="bSell">Cobrar</button><p class="pos-note">${navigator.onLine ? 'La venta se sube sola.' : 'Sin internet: queda guardada en este equipo.'}</p></aside>
     </div>
-    <div class="card cart"><h2>Ticket</h2><div id="cartBox"></div>
-      <div class="row" style="margin-top:.6rem"><select id="pay"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="mercadopago">MercadoPago</option><option value="tarjeta">Tarjeta</option></select>
-      <button class="btn" id="bSell">Cobrar</button></div>
-      <p class="mut">Online sube solo · offline queda en cola.</p></div>
   </div>`, 'ventas', { orgs: list, org, email: (user as any)?.email });
   bindCommon(list, org);
   const render = () => {
@@ -726,15 +722,14 @@ async function vVentas() {
       return { product_id: id, name: p.name, qty, price: p.price };
     });
     const total = items.reduce((a, i) => a + i.price * i.qty, 0);
-    (document.getElementById('cartBox') as HTMLElement).innerHTML = items.length
-      ? `<table>${items.map((i) => `<tr><td>${esc(i.name)} x${i.qty}</td><td>${fmt(i.price * i.qty)}</td><td><button class="btn ghost small" data-rm="${i.product_id}">✕</button></td></tr>`).join('')}</table><div class="kpi">${fmt(total)}</div>`
-      : '<p class="mut">Ticket vacío. Tocá + Agregar.</p>';
-    document.querySelectorAll('[data-rm]').forEach((b) => (b as HTMLButtonElement).onclick = () => { cart.delete((b as HTMLButtonElement).dataset.rm!); render(); });
-    const invalid = items.some((i) => {
-      const p = prods.find((x) => x.id === i.product_id);
-      return !p || p.stock < i.qty;
-    });
-    (document.getElementById('bSell') as HTMLButtonElement).disabled = !items.length || invalid;
+    const box = document.getElementById('cartBox') as HTMLElement;
+    box.innerHTML = items.length ? `<div class="cart-lines">${items.map((i) => `<div class="cart-line"><div class="cart-line-name"><b>${esc(i.name)}</b><small>${fmt(i.price)} c/u</small></div><div class="cart-qty"><button data-dec="${i.product_id}">−</button><b>${i.qty}</b><button data-inc="${i.product_id}">+</button></div><strong>${fmt(i.price * i.qty)}</strong></div>`).join('')}</div><div class="cart-total"><span>Total</span><strong>${fmt(total)}</strong></div>` : '<div class="empty-cart">🛒<br/><b>Tu venta está vacía</b><p class="mut">Tocá un producto para agregarlo.</p></div>';
+    box.querySelectorAll('[data-dec]').forEach((b) => (b as HTMLButtonElement).onclick = () => { const id = (b as HTMLButtonElement).dataset.dec!; cart.set(id, Math.max(0, (cart.get(id) ?? 1) - 1)); if (!cart.get(id)) cart.delete(id); render(); });
+    box.querySelectorAll('[data-inc]').forEach((b) => (b as HTMLButtonElement).onclick = () => { const id = (b as HTMLButtonElement).dataset.inc!; const p = prods.find((x) => x.id === id); if (p && (cart.get(id) ?? 0) < p.stock) cart.set(id, (cart.get(id) ?? 0) + 1); render(); });
+    const invalid = items.some((i) => { const p = prods.find((x) => x.id === i.product_id); return !p || p.stock < i.qty; });
+    const sell = document.getElementById('bSell') as HTMLButtonElement;
+    sell.disabled = !items.length || invalid;
+    sell.textContent = items.length ? `Cobrar ${fmt(total)}` : 'Cobrar';
   };
   (document.getElementById('bSell') as HTMLButtonElement).onclick = async () => {
     const items = [...cart.entries()].map(([id, qty]) => {
@@ -742,7 +737,7 @@ async function vVentas() {
       return { product_id: id, name: p.name, qty, price: p.price };
     });
     if (!items.length) return;
-    const pm = (document.getElementById('pay') as HTMLSelectElement).value;
+    const pm = payMethod;
     const sell = document.getElementById('bSell') as HTMLButtonElement;
     sell.disabled = true;
     try {
@@ -755,6 +750,11 @@ async function vVentas() {
       toast(e?.message ?? 'No pude guardar la venta');
     }
   };
+  document.querySelectorAll('[data-pay]').forEach((b) => (b as HTMLButtonElement).onclick = () => {
+    payMethod = (b as HTMLButtonElement).dataset.pay ?? 'efectivo';
+    document.querySelectorAll('[data-pay]').forEach((x) => x.classList.toggle('on', x === b));
+  });
+  (document.getElementById('bClearCart') as HTMLButtonElement).onclick = () => { cart.clear(); render(); };
   document.querySelectorAll('[data-add]').forEach((b) => (b as HTMLButtonElement).onclick = () => {
     const id = (b as HTMLButtonElement).dataset.add!;
     const p = prods.find((x) => x.id === id);
