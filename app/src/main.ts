@@ -726,6 +726,17 @@ async function vVentas() {
       (el as HTMLElement).style.display = (el as HTMLElement).dataset.name!.includes(q) ? '' : 'none';
     });
   };
+  (document.getElementById('q2') as HTMLInputElement).onkeydown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const code = (e.target as HTMLInputElement).value.trim();
+    const p = prods.find((x) => x.barcode === code || x.id === code);
+    if (!p) { toast('No encontré ese código en el stock'); return; }
+    if (p.stock <= 0) { toast('Ese producto no tiene stock'); return; }
+    cart.set(p.id, Math.min(p.stock, (cart.get(p.id) ?? 0) + 1));
+    (e.target as HTMLInputElement).value = '';
+    toast(`${p.name} agregado`); render();
+  };
   render();
 }
 
