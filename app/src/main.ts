@@ -710,9 +710,9 @@ async function vVentas() {
   <div class="pos-page">
     <div class="pos-subhead"><p>Buscá un producto o ingresá su código.</p><span class="pos-tip">Lector LED · Cámara</span></div>
     <div class="pos-layout">
-      <section class="card pos-products"><div class="pos-search"><input id="q2" data-scanner-input placeholder="Buscar producto o código…" aria-label="Buscar producto o código" /><button class="btn ghost" id="bScanPos">Cámara</button></div><div class="prod-grid" id="pg">${prods.map((p) => `
-        <div class="card prod" data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><div class="prod-info"><b>${esc(p.name)}</b><span class="mut">${fmt(p.price)} · ${p.stock > 0 ? `Stock ${p.stock}` : 'Sin stock'}</span></div><button class="add-btn" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>${p.stock <= 0 ? 'Sin stock' : 'Agregar'}</button></div>`).join('') || '<div class="empty-dashboard">Todavía no hay productos. Pedile al dueño que cargue el stock.</div>'}</div></section>
-      <aside class="card pos-cart"><div class="cart-head"><div><div class="eyebrow">Pedido actual</div><h2>Venta</h2></div><button class="btn ghost small" id="bClearCart">Vaciar</button></div><div id="cartBox" class="cart-scroll"></div><div class="pos-cart-foot"><div class="pay-label">Medio de pago</div><div class="pay-grid"><button class="pay-btn ${payMethod === 'efectivo' ? 'on' : ''}" data-pay="efectivo">Efectivo</button><button class="pay-btn ${payMethod === 'transferencia' ? 'on' : ''}" data-pay="transferencia">Transferencia</button><button class="pay-btn ${payMethod === 'mercadopago' ? 'on' : ''}" data-pay="mercadopago">MercadoPago</button><button class="pay-btn ${payMethod === 'tarjeta' ? 'on' : ''}" data-pay="tarjeta">Tarjeta</button></div><button class="btn charge-btn" id="bSell">Cobrar</button><p class="pos-note">${navigator.onLine ? 'La venta se sube sola.' : 'Sin internet: queda guardada en este equipo.'}</p></div></aside>
+      <section class="card pos-products"><div class="pos-search"><input id="q2" data-scanner-input placeholder="Buscar producto o código…" aria-label="Buscar producto o código" /><button class="btn ghost" id="bScanPos">Cámara</button></div><div class="prod-list" id="pg">${prods.map((p) => `
+        <div class="prod-row" data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><div class="prod-info"><b>${esc(p.name)}</b><span class="mut">${fmt(p.price)} · ${p.stock > 0 ? `Stock ${p.stock}` : 'Sin stock'}</span></div><button class="add-btn" data-add="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>${p.stock <= 0 ? 'Sin stock' : 'Agregar'}</button></div>`).join('') || '<div class="empty-dashboard">Todavía no hay productos. Pedile al dueño que cargue el stock.</div>'}</div></section>
+      <aside class="card pos-cart"><div class="cart-head"><div><div class="eyebrow">Pedido actual</div><h2>Venta</h2></div><button class="btn ghost small" id="bClearCart">Vaciar</button></div><div id="cartBox" class="cart-scroll"></div><div class="pos-cart-foot"><div class="pay-label">Medio de pago</div><div class="pay-seg" role="radiogroup" aria-label="Medio de pago"><button class="pay-opt ${payMethod === 'efectivo' ? 'on' : ''}" data-pay="efectivo">Efectivo</button><button class="pay-opt ${payMethod === 'transferencia' ? 'on' : ''}" data-pay="transferencia">Transferencia</button><button class="pay-opt ${payMethod === 'mercadopago' ? 'on' : ''}" data-pay="mercadopago">MercadoPago</button><button class="pay-opt ${payMethod === 'tarjeta' ? 'on' : ''}" data-pay="tarjeta">Tarjeta</button></div><button class="btn charge-btn" id="bSell">Cobrar</button><p class="pos-note">${navigator.onLine ? 'La venta se sube sola.' : 'Sin internet: queda guardada en este equipo.'}</p></div></aside>
     </div>
   </div>`, 'ventas', { orgs: list, org, email: (user as any)?.email });
   bindCommon(list, org);
@@ -773,7 +773,7 @@ async function vVentas() {
   };
   (document.getElementById('q2') as HTMLInputElement).oninput = (e) => {
     const q = (e.target as HTMLInputElement).value.toLowerCase();
-    document.querySelectorAll('#pg .prod').forEach((el) => {
+    document.querySelectorAll('#pg .prod-row').forEach((el) => {
       (el as HTMLElement).style.display = (el as HTMLElement).dataset.name!.includes(q) ? '' : 'none';
     });
   };
