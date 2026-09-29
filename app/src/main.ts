@@ -778,7 +778,7 @@ async function vVentas() {
     });
   };
   (document.getElementById('q2') as HTMLInputElement).onkeydown = (e) => {
-    if (e.key !== 'Enter') return;
+    if (e.key !== 'Enter' && e.key !== 'Tab') return;
     e.preventDefault();
     const code = (e.target as HTMLInputElement).value.trim();
     const p = prods.find((x) => x.barcode === code || x.id === code);
