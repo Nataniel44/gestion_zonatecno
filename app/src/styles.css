@@ -98,12 +98,10 @@ th { color: var(--mut); font-size: .75rem; text-transform: uppercase; letter-spa
 .prod { display: flex; flex-direction: column; gap: .4rem; }
 .pos { display: grid; grid-template-columns: 1fr 340px; gap: .9rem; align-items: start; }
 .pos-page { display: grid; gap: 1rem; }
-.pos-hero { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-.pos-hero h1 { font-size: clamp(1.6rem, 3vw, 2.2rem); margin: .3rem 0; }
-.pos-hero p { color: var(--mut); }
-.pos-hero-badge { display: grid; gap: .1rem; justify-items: center; min-width: 130px; padding: .8rem; border: 1px solid rgba(23,201,100,.3); border-radius: 18px; background: rgba(23,201,100,.08); font-size: 1.5rem; }
-.pos-hero-badge b { font-size: .95rem; }
-.pos-hero-badge small { color: var(--mut); font-size: .72rem; }
+.pos-head-compact { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .1rem; }
+.pos-head-compact h1 { font-size: 1.45rem; margin: 0; }
+.pos-head-compact p { color: var(--mut); font-size: .84rem; margin-top: .1rem; }
+.pos-tip { color: var(--mut); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 99px; padding: .4rem .7rem; font-size: .75rem; white-space: nowrap; }
 .pos-layout { display: grid; grid-template-columns: 1fr 360px; gap: .9rem; align-items: start; }
 .pos-products { min-width: 0; }
 .pos-search { display: flex; gap: .5rem; margin-bottom: .8rem; }
@@ -202,7 +200,7 @@ select.orgsel { max-width: 260px; }
 
 /* PC first, responsive */
 @media (min-width: 1021px) {
-  .pos-layout { height: calc(100dvh - 190px); min-height: 520px; align-items: stretch; }
+  .pos-layout { height: calc(100dvh - 145px); min-height: 520px; align-items: stretch; }
   .pos-products, .pos-cart { height: 100%; min-height: 0; }
   .pos-products { display: flex; flex-direction: column; }
   .pos-products .prod-grid { flex: 1; min-height: 0; overflow-y: auto; align-content: start; padding-right: .3rem; }
@@ -252,8 +250,8 @@ select.orgsel { max-width: 260px; }
   .cash-summary { grid-template-columns: 1fr; }
   .ticket-row { grid-template-columns: 1fr; }
   .ticket-row select { width: 100%; }
-  .pos-hero { flex-direction: column; align-items: flex-start; }
-  .pos-hero-badge { display: flex; align-items: center; gap: .5rem; width: 100%; justify-content: flex-start; }
+  .pos-head-compact { align-items: flex-start; }
+  .pos-tip { display: none; }
   .pos-search { flex-direction: column; }
   .pos-search input { width: 100%; }
 }
