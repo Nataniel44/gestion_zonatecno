@@ -202,6 +202,8 @@ th { color: var(--mut); font-size: .75rem; text-transform: uppercase; letter-spa
 .team-row { display: grid; grid-template-columns: 34px 1fr auto; gap: .6rem; align-items: center; padding: .5rem; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); }
 .team-avatar { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: rgba(23,201,100,.14); color: #7dffb0; font-style: normal; font-weight: 800; }
 .team-row b { display: block; font-size: .88rem; }
+.team-manage { grid-column: 1 / -1; }
+.team-manage select { width: auto; flex: 1; }
 .team-row small { display: block; color: var(--mut); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; }
 .role-tag { font-size: .7rem; font-weight: 800; border-radius: 99px; padding: .25rem .5rem; white-space: nowrap; }
 .role-tag.seller { color: #9dc4ff; background: rgba(14,165,233,.1); border: 1px solid rgba(14,165,233,.3); }

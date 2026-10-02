@@ -141,3 +141,18 @@ aplicar estas reglas en el servidor:
 pero ese filtro no reemplaza las API rules. Si las reglas quedan abiertas
 (`@request.auth.id != ''`), cualquier usuario autenticado podría consultar datos
 de otro negocio.
+
+## Índices únicos (idempotencia)
+
+El script `setup:pocketbase` crea estos índices además de las reglas:
+
+- `memberships`: único `(org, user)` — una membresía por persona y negocio.
+- `products`, `sales`, `stock_moves`, `tickets`: único `(org, local_id)`.
+- `sale_items`: único `(sale, local_id)`.
+- `cash_days`: único `(org, day)` y `(org, local_id)`.
+- `business_profiles`: único `(org)`.
+- `receipts`: único `(org, number)` y `(org, local_id)`.
+
+Si el script avisa que un índice no se aplicó, hay duplicados viejos que limpiar
+a mano antes de reintentar. Nunca borres un índice en producción sin reemplazo:
+los reintentos offline volverían a duplicar ventas o recibos.

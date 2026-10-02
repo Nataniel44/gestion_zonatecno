@@ -2,7 +2,7 @@ import './styles.css';
 import { isCloudConfigured, pbUrl, isLoggedIn } from './lib/pb';
 import { db } from './lib/localdb';
 import {
-  signIn, signUp, signOut, getUser, refreshSession, verifyAccountPassword, myOrgs, createOrg, addMemberById,
+  signIn, signUp, signOut, getUser, refreshSession, verifyAccountPassword, requestPasswordReset, myOrgs, createOrg, addMemberById, updateMemberRole, removeMember,
   pullProducts, saveProductLocal, deleteProductLocal, newLocalProduct,
   createSaleOffline, syncOutbox, salesHistoryCloud, listMembers,
   hashPin, setLocalSession, getLocalSession,
@@ -28,6 +28,29 @@ function toast(msg: string) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3200);
+}
+
+// Reemplazo de confirm()/alert(): funciona en PWA, iOS y Android.
+function confirmModal(msg: string, okLabel = 'Confirmar'): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.className = 'ovl';
+    ov.innerHTML = `<div class="card modal-card"><h2>Confirmar</h2><p class="mut">${esc(msg)}</p><div class="row" style="margin-top:.6rem"><button class="btn" id="cfOk">${esc(okLabel)}</button><button class="btn ghost" id="cfCancel">Cancelar</button></div></div>`;
+    document.body.appendChild(ov);
+    const done = (v: boolean) => { ov.remove(); resolve(v); };
+    (document.getElementById('cfCancel') as HTMLButtonElement).onclick = () => done(false);
+    (document.getElementById('cfOk') as HTMLButtonElement).onclick = () => done(true);
+    ov.addEventListener('click', (e) => { if (e.target === ov) done(false); });
+  });
+}
+
+function infoModal(title: string, body: string) {
+  const ov = document.createElement('div');
+  ov.className = 'ovl';
+  ov.innerHTML = `<div class="card modal-card"><h2>${esc(title)}</h2><p class="mut">${esc(body)}</p><div class="row" style="margin-top:.6rem"><button class="btn" id="ifOk">Entendido</button></div></div>`;
+  document.body.appendChild(ov);
+  (document.getElementById('ifOk') as HTMLButtonElement).onclick = () => ov.remove();
+  ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
 }
 
 const getAccountType = () => (localStorage.getItem('zt_account_type') === 'empleado' ? 'empleado' : 'negocio');
@@ -161,6 +184,40 @@ document.addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('[data-install]')) installApp();
 });
 
+// Modal para elegir un producto del stock (reemplaza window.prompt).
+function pickProductFromStock(org: string): Promise<{ desc: string; qty: number; price: number } | null> {
+  return new Promise((resolve) => {
+    const done = (v: { desc: string; qty: number; price: number } | null) => { ov.remove(); resolve(v); };
+    const ov = document.createElement('div');
+    ov.className = 'ovl';
+    ov.innerHTML = `<div class="card modal-card"><h2>Traer del stock</h2>
+      <div class="field"><label>Buscar</label><input id="pkQ" placeholder="Escribí para filtrar…" /></div>
+      <div class="rc-list" id="pkList" style="max-height:40dvh;overflow-y:auto"></div>
+      <div class="row" style="margin-top:.6rem"><button class="btn ghost" id="pkCancel">Cancelar</button></div></div>`;
+    document.body.appendChild(ov);
+    const paint = (q: string) => {
+      const ql = q.trim().toLowerCase();
+      const run = async () => {
+        const prods = (await db.products.where('org_id').equals(org).toArray())
+          .filter((p) => !p.deleted && (!ql || `${p.name} ${p.barcode ?? ''}`.toLowerCase().includes(ql)))
+          .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 60);
+        (document.getElementById('pkList') as HTMLElement).innerHTML = prods.map((p) => `
+          <div class="rc-row" style="cursor:pointer" data-pk="${p.id}"><div><b>${esc(p.name)}</b><small>${fmt(p.price)} · Stock ${p.stock}</small></div></div>`).join('')
+          || '<div class="empty-dashboard">Sin coincidencias.</div>';
+        ov.querySelectorAll('[data-pk]').forEach((el) => (el as HTMLElement).onclick = async () => {
+          const p = await db.products.get((el as HTMLElement).dataset.pk!);
+          if (p) done({ desc: p.name, qty: 1, price: p.price });
+        });
+      };
+      void run();
+    };
+    (document.getElementById('pkCancel') as HTMLButtonElement).onclick = () => done(null);
+    ov.addEventListener('click', (e) => { if (e.target === ov) done(null); });
+    (document.getElementById('pkQ') as HTMLInputElement).oninput = (e) => paint((e.target as HTMLInputElement).value);
+    paint('');
+  });
+}
+
 function statusPills(syncMsg = '') {
   const net = navigator.onLine
     ? '<span class="pill ok"><span class="dot" style="background:#17c964"></span>online</span>'
@@ -219,7 +276,7 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
 }
 
 async function doSignOut() {
-  if (!confirm('¿Cerrar sesión en este equipo? Las ventas pendientes quedan guardadas y se suben al volver a entrar.')) return;
+  if (!await confirmModal('¿Cerrar sesión en este equipo? Las ventas pendientes quedan guardadas y se suben al volver a entrar.', 'Cerrar sesión')) return;
   try { await signOut(); } catch { /* seguimos con limpieza local igual */ }
   setLocalSession(null); // se cierra la caja, pero el PIN queda para reabrir offline
   localStorage.removeItem('zt_org');
@@ -385,7 +442,7 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
         ${mode === 'up' ? '<div class="field"><label>Repetir contraseña</label><input id="pw2" type="password" placeholder="Escribila igual" autocomplete="new-password" /></div>' : ''}
         <div id="loginErr" class="auth-err"></div>
         ${mode === 'in'
-          ? '<button class="btn auth-go" id="bGo">Entrar a mi negocio →</button>'
+          ? '<button class="btn auth-go" id="bGo">Entrar a mi negocio →</button><button class="btn ghost small" id="bForgot">¿Olvidaste tu contraseña?</button>'
           : '<button class="btn auth-go" id="bGo">Crear mi cuenta gratis</button>'}
       </div>
       <p class="auth-foot">Funciona sin internet · Tus datos son solo de tu negocio</p>
@@ -413,6 +470,15 @@ async function vLogin(mode: 'in' | 'up' = 'in') {
       if (i) i.type = i.type === 'password' ? 'text' : 'password';
     }
   };
+  (document.getElementById('bForgot') as HTMLButtonElement | null)?.addEventListener('click', async () => {
+    const em = ((document.getElementById('em') as HTMLInputElement | null)?.value ?? '').trim();
+    if (!em.includes('@')) { showErr('Escribí tu email arriba y tocá de nuevo ¿Olvidaste tu contraseña?'); return; }
+    if (!navigator.onLine) { showErr('Sin internet no puedo enviar el correo de recupero.'); return; }
+    try {
+      await requestPasswordReset(em);
+      toast('Si esa cuenta existe, te enviamos el correo para cambiar la clave');
+    } catch { showErr('No pude enviar el correo. Revisá el email e intentá de nuevo.'); }
+  });
   (document.getElementById('bGo') as HTMLButtonElement).onclick = async () => {
     const em = (document.getElementById('em') as HTMLInputElement).value.trim();
     const pw = (document.getElementById('pw') as HTMLInputElement).value;
@@ -577,7 +643,7 @@ async function vPanel() {
   </div>`, 'panel', { orgs: list, org, email: (user as any)?.email, syncMsg });
   bindCommon(list, org);
   (document.getElementById('bWhy') as HTMLButtonElement | null)?.addEventListener('click', () => {
-    alert(pendError || 'La venta sigue pendiente. Volvé a iniciar sesión y presioná Sincronizar.');
+    infoModal('Ventas sin subir', pendError || 'La venta sigue pendiente. Volvé a iniciar sesión y presioná Sincronizar.');
   });
   (document.getElementById('bSetupPin') as HTMLButtonElement | null)?.addEventListener('click', async () => {
     const uid = (user as any)?.id;
@@ -592,7 +658,10 @@ async function vPanel() {
       await withTimeout(pullProducts(org));
       toast(r.pending ? `${r.synced} subidas, ${r.pending} quedan` : 'Todo sincronizado');
       router();
-    } catch (e: any) { (document.getElementById('syncMsg') as HTMLElement).textContent = e.message; }
+    } catch (e: any) {
+      (document.getElementById('syncMsg') as HTMLElement).textContent = e.message;
+      if (/sesi.n vencida/i.test(e?.message ?? '')) { location.hash = '#/login'; router(); }
+    }
   };
 }
 
@@ -679,7 +748,7 @@ async function vProductos(q = '') {
   });
   document.querySelectorAll('[data-del]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
     if (!await ensureProductAuth()) return;
-    if (!confirm('¿Borrar de este equipo? (En nube se desactiva al sincronizar)')) return;
+    if (!await confirmModal('¿Borrar de este equipo? En la nube se desactiva al sincronizar.', 'Borrar')) return;
     await deleteProductLocal((b as HTMLButtonElement).dataset.del!);
     toast('Borrado local'); router();
   });
@@ -955,14 +1024,17 @@ async function vAdmin() {
     const button = document.getElementById('bAdminSync') as HTMLButtonElement;
     button.disabled = true;
     try { const r = await withTimeout(syncOutbox(cur)); await withTimeout(pullProducts(cur)); toast(`${r.synced} subidas, ${r.pending} pendientes`); router(); }
-    catch (e: any) { toast(e?.message ?? 'No pude sincronizar'); }
+    catch (e: any) {
+      toast(e?.message ?? 'No pude sincronizar');
+      if (/sesi.n vencida/i.test(e?.message ?? '')) { location.hash = '#/login'; router(); }
+    }
     finally { button.disabled = false; }
   };
   (document.getElementById('bCopyReport') as HTMLButtonElement).onclick = async () => {
     try { await navigator.clipboard.writeText(report); toast('Informe copiado'); } catch { window.alert(report); }
   };
   (document.getElementById('bResetLocal') as HTMLButtonElement).onclick = async () => {
-    if (!confirm('Esto borra productos, ventas pendientes y PINs de este dispositivo. ¿Continuar?')) return;
+    if (!await confirmModal('Esto borra productos, ventas pendientes y PINs de este dispositivo. ¿Continuar?', 'Borrar todo')) return;
     await db.delete();
     toast('Datos locales borrados');
     location.reload();
@@ -992,7 +1064,7 @@ async function vEquipo() {
   const members = cur && isCloudConfigured() ? await listMembers(cur).catch(() => []) : [];
   const roleLabel = (role: string) => role === 'dueno' ? 'Dueño' : role === 'admin' ? 'Administrador' : 'Vendedor';
   const teamList = members.length
-    ? `<div class="team-list">${members.map((m) => `<div class="team-row"><i class="team-avatar">${esc((m.name || '?').charAt(0).toUpperCase())}</i><div><b>${esc(m.name)}</b><small>${esc(m.email || m.id)}</small></div><span class="role-tag ${m.role === 'vendedor' ? 'seller' : 'admin'}">${roleLabel(m.role)}</span></div>`).join('')}</div>`
+    ? `<div class="team-list">${members.map((m) => `<div class="team-row"><i class="team-avatar">${esc((m.name || '?').charAt(0).toUpperCase())}</i><div><b>${esc(m.name)}</b><small>${esc(m.email || m.id)}</small></div><span class="role-tag ${m.role === 'vendedor' ? 'seller' : 'admin'}">${roleLabel(m.role)}</span>${canManageTeam && m.role !== 'dueno' ? `<div class="team-manage row"><select data-mrole="${m.id}" title="Cambiar permiso" style="max-width:170px"><option value="vendedor" ${m.role === 'vendedor' ? 'selected' : ''}>Vendedor</option><option value="admin" ${m.role === 'admin' ? 'selected' : ''}>Administrador</option></select><button class="btn ghost small" data-mrm="${m.id}">Quitar</button></div>` : ''}</div>`).join('')}</div>`
     : '<p class="mut">Todavía no hay personas cargadas en este negocio.</p>';
   const teamContent = !cur
     ? (getAccountType() === 'empleado'
@@ -1080,6 +1152,21 @@ async function vEquipo() {
     } catch (e: any) { toast(e.message); }
     finally { bA.disabled = false; }
   };
+  document.querySelectorAll('[data-mrole]').forEach((el) => (el as HTMLSelectElement).onchange = async (e) => {
+    const sel = e.target as HTMLSelectElement;
+    if (!cur || !await ensureTeamAuth()) { router(); return; }
+    sel.disabled = true;
+    try { await updateMemberRole(cur, sel.dataset.mrole!, sel.value); toast('Permiso actualizado'); router(); }
+    catch (err: any) { toast(err?.message ?? 'No pude actualizar el permiso'); sel.disabled = false; }
+  });
+  document.querySelectorAll('[data-mrm]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
+    const btn = b as HTMLButtonElement;
+    if (!cur || !await ensureTeamAuth()) return;
+    if (!await confirmModal('¿Quitar a esta persona del negocio? Ya no verá el stock ni podrá vender.', 'Quitar')) return;
+    btn.disabled = true;
+    try { await removeMember(cur, btn.dataset.mrm!); toast('Persona quitada del equipo'); router(); }
+    catch (err: any) { toast(err?.message ?? 'No pude quitar a la persona'); btn.disabled = false; }
+  });
 }
 
 // ---------- Recibos universales (cualquier rubro, imprimible) ----------
@@ -1105,9 +1192,22 @@ function printReceiptHTML(r: any): string {
 }
 
 function doPrintReceipt(r: any) {
-  const w = window.open('', '_blank', 'width=420,height=700');
-  if (!w) { toast('El navegador bloqueó la ventana de impresión'); return; }
-  w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>${esc(r.title)} ${esc(r.number)}</title><style>
+  // iframe oculto en vez de window.open: los navegadores móviles y las PWA
+  // suelen bloquear las ventanas nuevas, pero permiten imprimir el iframe.
+  const frame = document.createElement('iframe');
+  frame.style.position = 'fixed';
+  frame.style.right = '0'; frame.style.bottom = '0';
+  frame.style.width = '0'; frame.style.height = '0';
+  frame.style.border = '0';
+  frame.title = `Imprimir ${r.number}`;
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument ?? frame.contentWindow?.document;
+  if (!doc) { frame.remove(); toast('No pude abrir la impresión'); return; }
+  const win = frame.contentWindow;
+  win?.addEventListener('afterprint', () => frame.remove());
+  setTimeout(() => frame.remove(), 60000); // seguridad por si afterprint no dispara
+  doc.open();
+  doc.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>${esc(r.title)} ${esc(r.number)}</title><style>
     *{box-sizing:border-box} body{font-family:monospace,system-ui,sans-serif;margin:0;padding:12px;color:#111}
     .rc-print{max-width:300px;margin:0 auto} .rc-head{display:flex;gap:10px;align-items:center;border-bottom:2px dashed #111;padding-bottom:8px}
     .rc-logo{width:42px;height:42px;border-radius:10px;background:#111;color:#fff;display:grid;place-items:center;font-weight:900;font-size:1.3rem}
@@ -1119,7 +1219,9 @@ function doPrintReceipt(r: any) {
     .rc-notes{font-size:.72rem} .rc-foot{text-align:center;font-size:.72rem;margin-top:8px} .rc-sign{display:flex;justify-content:space-between;margin-top:26px;font-size:.7rem}
     .rc-sign div{border-top:1px solid #111;padding-top:4px;width:45%;text-align:center}
     @media print{body{padding:0}}</style></head><body>${printReceiptHTML(r)}<script>onload=()=>{setTimeout(()=>{print();},300)}<\/script></body></html>`);
-  w.document.close();
+  doc.close();
+  // El foco va al iframe para que el diálogo de impresión salga del recibo.
+  setTimeout(() => { try { win?.focus(); } catch { /* sin foco: igual imprime */ } }, 100);
 }
 
 async function vRecibos() {
@@ -1229,12 +1331,8 @@ async function vRecibos() {
 
   (document.getElementById('bAddItem') as HTMLButtonElement).onclick = () => { rows.push({ desc: '', qty: 1, price: 0 }); drawRows(); };
   (document.getElementById('bFromStock') as HTMLButtonElement).onclick = async () => {
-    const prods = (await db.products.where('org_id').equals(org).toArray()).filter((p) => !p.deleted);
-    if (!prods.length) { toast('No hay stock cargado'); return; }
-    const names = prods.slice(0, 30).map((p, i) => `${i + 1}. ${p.name} — ${fmt(p.price)}`).join('\n');
-    const pick = window.prompt('Escribí el número del producto:\n' + names);
-    const idx = Number(pick || '') - 1;
-    if (prods[idx]) { rows.push({ desc: prods[idx].name, qty: 1, price: prods[idx].price }); drawRows(); preview(); }
+    const picked = await pickProductFromStock(org);
+    if (picked) { rows.push(picked); drawRows(); preview(); }
   };
   (document.getElementById('bNewRc') as HTMLButtonElement).onclick = () => {
     (document.getElementById('rcEditor') as HTMLElement).style.display = 'block';
@@ -1285,7 +1383,7 @@ async function vRecibos() {
     box.scrollIntoView({ behavior: 'smooth' });
   });
   document.querySelectorAll('[data-del-rc]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
-    if (!confirm('¿Borrar este recibo de este equipo?')) return;
+    if (!await confirmModal('¿Borrar este recibo de este equipo?', 'Borrar')) return;
     await deleteReceipt((b as HTMLButtonElement).dataset.delRc!);
     toast('Recibo borrado'); router();
   });
@@ -1362,6 +1460,10 @@ document.addEventListener('click', (e) => {
 addEventListener('online', refreshNet);
 addEventListener('offline', refreshNet);
 setInterval(refreshNet, 15000);
+// Renueva el token cada 10 minutos para que la sesión no venza en turnos largos.
+setInterval(() => {
+  if (navigator.onLine && isLoggedIn()) void refreshSession().catch(() => undefined);
+}, 10 * 60 * 1000);
 router();
 // Pinta la barra en la primera carga si arranca offline
 setTimeout(refreshNet, 300);

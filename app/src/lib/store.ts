@@ -37,6 +37,9 @@ export async function signUp(email: string, password: string, phone = '') {
   }
   await pb.collection('users').authWithPassword(email, password);
 }
+export async function requestPasswordReset(email: string) {
+  await pb.collection('users').requestPasswordReset(email.trim());
+}
 export async function verifyAccountPassword(email: string, password: string) {
   if (!isCloudConfigured() || !navigator.onLine) return true;
   try {
@@ -46,6 +49,15 @@ export async function verifyAccountPassword(email: string, password: string) {
 }
 
 export async function signOut() { pb.authStore.clear(); }
+
+// Plata en pesos con 2 decimales como máximo: evita 0.1+0.2=0.30000000000000004
+// en totales, vueltos y diferencias de caja.
+export const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+// 401 = sesión vencida o revocada. Quien lo recibe debe pedir re-login
+// en vez de acumular ventas en "pendiente con error" para siempre.
+export const isAuthError = (e: any) =>
+  e?.status === 401 || e?.response?.status === 401;
 export async function getUser() {
   if (!isCloudConfigured() || !pb.authStore.isValid) return null;
   return pb.authStore.model;
@@ -131,6 +143,40 @@ export async function addMemberById(org_id: string, user_id: string, role: strin
     if (!isNotFound(e)) throw e;
     await pb.collection('memberships').create({ org: org_id, user: user_id, ...details });
   }
+}
+
+export async function updateMemberRole(org_id: string, user_id: string, role: string) {
+  if (role !== 'admin' && role !== 'vendedor') throw new Error('Rol inválido');
+  const membership = await pb.collection('memberships').getFirstListItem(`org="${org_id}" && user="${user_id}"`);
+  if (membership.role === 'dueno') throw new Error('El rol del dueño no se puede cambiar.');
+  await pb.collection('memberships').update(membership.id, { role });
+  const org = await pb.collection('orgs').getOne(org_id);
+  const admins: string[] = (org as any).admins ?? [];
+  const nextAdmins = role === 'admin'
+    ? (admins.includes(user_id) ? admins : [...admins, user_id])
+    : admins.filter((id) => id !== user_id);
+  if (nextAdmins.length !== admins.length || role === 'admin') {
+    await pb.collection('orgs').update(org_id, { admins: nextAdmins });
+  }
+}
+
+export async function removeMember(org_id: string, user_id: string) {
+  const me = pb.authStore.model;
+  if (me && me.id === user_id) throw new Error('No podés quitar tu propia cuenta.');
+  try {
+    const membership = await pb.collection('memberships').getFirstListItem(`org="${org_id}" && user="${user_id}"`);
+    if (membership.role === 'dueno') throw new Error('No se puede quitar al dueño del negocio.');
+    await pb.collection('memberships').delete(membership.id);
+  } catch (e) {
+    if (!isNotFound(e)) throw e;
+  }
+  const org = await pb.collection('orgs').getOne(org_id);
+  const members: string[] = (org as any).members ?? [];
+  const admins: string[] = (org as any).admins ?? [];
+  await pb.collection('orgs').update(org_id, {
+    members: members.filter((id) => id !== user_id),
+    admins: admins.filter((id) => id !== user_id),
+  });
 }
 
 // ---- Productos: local-first ----
@@ -317,7 +363,7 @@ export async function createSaleOffline(org_id: string, items: OutboxSale['items
       : { ...item });
   }
   const lines = [...normalized.values()];
-  const total = lines.reduce((a, i) => a + i.price * i.qty, 0);
+  const total = round2(lines.reduce((a, i) => a + i.price * i.qty, 0));
   const sale: OutboxSale = { id: uid(), org_id, total, pay_method, items: lines, createdAt: Date.now() };
 
   await db.transaction('rw', db.products, db.outbox, async () => {
@@ -365,6 +411,10 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
   try {
     productMap = await pushDirtyProducts(org_id);
   } catch (e: any) {
+    if (isAuthError(e)) {
+      pb.authStore.clear();
+      throw new Error('Sesión vencida: volvé a entrar para subir las ventas.');
+    }
     const rawError = errorText(e);
     const pending = await db.outbox.where('org_id').equals(org_id).toArray();
     for (const sale of pending) {
@@ -449,6 +499,12 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
       await db.outbox.delete(s.id);
       ok++;
     } catch (e: any) {
+      if (isAuthError(e)) {
+        pb.authStore.clear();
+        s.lastError = 'Sesión vencida: volvé a entrar para subir las ventas.';
+        await db.outbox.put(s);
+        throw new Error('Sesión vencida: volvé a entrar para subir las ventas.');
+      }
       s.attempts = (s.attempts ?? 0) + 1;
       const rawError = errorText(e, stage);
       s.lastError = /local_id|occurred_at|unknown field|field.*not found/i.test(String(rawError))
@@ -538,7 +594,8 @@ export async function openCashDay(org_id: string, open_amount: number) {
   return cash;
 }
 export async function closeCashDay(org_id: string, id: string, close_amount: number, expected_cash: number, note = '') {
-  await db.cashDays.update(id, { closed_at: Date.now(), close_amount, expected_cash, difference: close_amount - expected_cash, note, dirty: 1, updatedAt: Date.now() });
+  close_amount = round2(close_amount); expected_cash = round2(expected_cash);
+  await db.cashDays.update(id, { closed_at: Date.now(), close_amount, expected_cash, difference: round2(close_amount - expected_cash), note, dirty: 1, updatedAt: Date.now() });
   void pushCashDays(org_id).catch(() => undefined);
 }
 export async function pushCashDays(org_id: string) {
@@ -624,8 +681,8 @@ export async function pushProfiles(org_id: string) {
 }
 
 export function receiptTotals(items: { qty: number; price: number }[], discount = 0) {
-  const subtotal = items.reduce((a, i) => a + Number(i.qty || 0) * Number(i.price || 0), 0);
-  const total = Math.max(0, subtotal - Number(discount || 0));
+  const subtotal = round2(items.reduce((a, i) => a + Number(i.qty || 0) * Number(i.price || 0), 0));
+  const total = round2(Math.max(0, subtotal - Number(discount || 0)));
   return { subtotal, total };
 }
 
@@ -661,10 +718,17 @@ export async function createReceipt(
   profile: BusinessProfile,
   seller = ''
 ): Promise<LocalReceipt> {
-  const seq = profile.next_number || 1;
-  const number = `${profile.prefix || 'R'}-${String(seq).padStart(6, '0')}`;
+  // El número debe ser único por negocio: si dos equipos emiten a la vez,
+  // avanzo el correlativo hasta encontrar un hueco libre en este equipo.
+  const prefix = profile.prefix || 'R';
+  let seq = profile.next_number || 1;
+  let number = `${prefix}-${String(seq).padStart(6, '0')}`;
+  while (await db.receipts.where('org_id').equals(org_id).and((x) => x.number === number).first()) {
+    seq += 1;
+    number = `${prefix}-${String(seq).padStart(6, '0')}`;
+  }
   const { subtotal, total } = receiptTotals(data.items, data.discount ?? 0);
-  const received = Number(data.received ?? total);
+  const received = round2(Number(data.received ?? total));
   const r: LocalReceipt = {
     id: uid(), org_id, number, seq,
     title: data.title || 'Recibo',
@@ -676,11 +740,11 @@ export async function createReceipt(
     device_detail: (data.device_detail ?? '').trim(),
     problem: (data.problem ?? '').trim(),
     items: data.items.filter((i) => i.desc.trim() || Number(i.price) > 0),
-    discount: Number(data.discount ?? 0),
+    discount: round2(Number(data.discount ?? 0)),
     subtotal, total,
     pay_method: data.pay_method ?? 'efectivo',
     received,
-    change: Math.max(0, received - total),
+    change: round2(Math.max(0, received - total)),
     status: data.status ?? 'pagado',
     notes: (data.notes ?? '').trim(),
     warranty_text: data.warranty_text ?? profile.warranty_text ?? '',
@@ -705,30 +769,72 @@ export async function deleteReceipt(id: string) {
   // Borrado solo local por ahora (el comprobante ya emitido no debería borrarse en nube sin auditoría).
 }
 
+function receiptPayload(org_id: string, r: LocalReceipt) {
+  return {
+    org: org_id, number: r.number, seq: r.seq, title: r.title,
+    issued_at: new Date(r.createdAt).toISOString(),
+    client_name: r.client_name, client_phone: r.client_phone, client_doc: r.client_doc,
+    device: r.device, device_detail: r.device_detail, problem: r.problem,
+    items: r.items, items_json: JSON.stringify(r.items),
+    discount: r.discount, subtotal: r.subtotal, total: r.total,
+    pay_method: r.pay_method, received: r.received, change: r.change, status: r.status,
+    notes: r.notes, warranty_text: r.warranty_text, seller: r.seller,
+    biz_name: r.biz_name, biz_address: r.biz_address, biz_phone: r.biz_phone,
+    biz_cuit: r.biz_cuit, biz_footer: r.biz_footer, local_id: r.local_id
+  };
+}
+
+async function uploadReceipt(org_id: string, r: LocalReceipt) {
+  let remote: any = null;
+  try { remote = await pb.collection('receipts').getFirstListItem(`org="${org_id}" && local_id="${r.local_id}"`); }
+  catch (e) { if (!isNotFound(e)) throw e; }
+  if (remote) await pb.collection('receipts').update(remote.id, receiptPayload(org_id, r));
+  else await pb.collection('receipts').create(receiptPayload(org_id, r));
+}
+
+// Si otro equipo usó el mismo número, asigno el próximo libre y reintento una vez.
+async function renumberReceipt(org_id: string, id: string): Promise<boolean> {
+  const r = await db.receipts.get(id);
+  if (!r) return false;
+  const profile = await getBusinessProfile(org_id);
+  const prefix = profile.prefix || 'R';
+  let seq = Math.max(profile.next_number || 1, (r.seq || 0) + 1);
+  let number = `${prefix}-${String(seq).padStart(6, '0')}`;
+  while (await db.receipts.where('org_id').equals(org_id).and((x) => x.number === number && x.id !== id).first()) {
+    seq += 1;
+    number = `${prefix}-${String(seq).padStart(6, '0')}`;
+  }
+  await db.transaction('rw', db.receipts, db.profiles, async () => {
+    await db.receipts.update(id, { number, seq });
+    await db.profiles.update(org_id, { next_number: seq + 1, dirty: 1, updatedAt: Date.now() });
+  });
+  void pushProfiles(org_id).catch(() => undefined);
+  return true;
+}
+
 export async function pushReceipts(org_id: string) {
   if (!isCloudConfigured() || !navigator.onLine || !pb.authStore.isValid) return;
   const rows = await db.receipts.where('org_id').equals(org_id).filter((r) => r.dirty === 1).toArray();
   for (const r of rows) {
     try {
-      const payload = {
-        org: org_id, number: r.number, seq: r.seq, title: r.title,
-        issued_at: new Date(r.createdAt).toISOString(),
-        client_name: r.client_name, client_phone: r.client_phone, client_doc: r.client_doc,
-        device: r.device, device_detail: r.device_detail, problem: r.problem,
-        items: r.items, items_json: JSON.stringify(r.items),
-        discount: r.discount, subtotal: r.subtotal, total: r.total,
-        pay_method: r.pay_method, received: r.received, change: r.change, status: r.status,
-        notes: r.notes, warranty_text: r.warranty_text, seller: r.seller,
-        biz_name: r.biz_name, biz_address: r.biz_address, biz_phone: r.biz_phone,
-        biz_cuit: r.biz_cuit, biz_footer: r.biz_footer, local_id: r.local_id
-      };
-      let remote: any = null;
-      try { remote = await pb.collection('receipts').getFirstListItem(`org="${org_id}" && local_id="${r.local_id}"`); }
-      catch (e) { if (!isNotFound(e)) throw e; }
-      if (remote) await pb.collection('receipts').update(remote.id, payload);
-      else await pb.collection('receipts').create(payload);
+      const fresh = (await db.receipts.get(r.id)) ?? r;
+      await uploadReceipt(org_id, fresh);
       await db.receipts.update(r.id, { dirty: 0, lastError: '' });
-    } catch (e) { await db.receipts.update(r.id, { lastError: errorText(e, 'recibo') }); }
+    } catch (e) {
+      const msg = errorText(e, 'recibo');
+      // Número duplicado en la nube (otro equipo lo usó): renumero y reintento una vez.
+      if (/unique|duplicate|already exists/i.test(msg) && await renumberReceipt(org_id, r.id)) {
+        try {
+          const fresh = await db.receipts.get(r.id);
+          if (fresh) {
+            await uploadReceipt(org_id, fresh);
+            await db.receipts.update(r.id, { dirty: 0, lastError: '' });
+            continue;
+          }
+        } catch (e2) { await db.receipts.update(r.id, { lastError: errorText(e2, 'recibo') }); continue; }
+      }
+      await db.receipts.update(r.id, { lastError: msg });
+    }
   }
 }
 

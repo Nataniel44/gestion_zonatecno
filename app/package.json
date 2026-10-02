@@ -13,6 +13,7 @@
     "start": "node scripts/serve.mjs",
     "preview": "vite preview",
     "setup:pocketbase": "node scripts/setup-pocketbase.mjs",
+    "backup:pocketbase": "node scripts/backup-pocketbase.mjs",
     "tauri:dev": "echo \"1) npm run dev  2) npx tauri dev (requiere Rust + @tauri-apps/cli)\"",
     "tauri:build": "echo \"npm run build + npx tauri build para generar .exe\""
   },

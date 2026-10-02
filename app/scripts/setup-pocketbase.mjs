@@ -33,9 +33,27 @@ const R = {
   business_profiles: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
   receipts: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
 };
+// Índices únicos: impiden duplicados cuando se reintenta una subida offline.
+// Se aplican como "no fatal": si hay duplicados viejos, el script avisa y sigue.
+const IDX = {
+  memberships: ['CREATE UNIQUE INDEX idx_memberships_org_user ON memberships (org, user)'],
+  products: ['CREATE UNIQUE INDEX idx_products_org_local ON products (org, local_id)'],
+  sales: ['CREATE UNIQUE INDEX idx_sales_org_local ON sales (org, local_id)'],
+  sale_items: ['CREATE UNIQUE INDEX idx_sale_items_sale_local ON sale_items (sale, local_id)'],
+  stock_moves: ['CREATE UNIQUE INDEX idx_stock_moves_org_local ON stock_moves (org, local_id)'],
+  tickets: ['CREATE UNIQUE INDEX idx_tickets_org_local ON tickets (org, local_id)'],
+  cash_days: [
+    'CREATE UNIQUE INDEX idx_cash_days_org_day ON cash_days (org, day)',
+    'CREATE UNIQUE INDEX idx_cash_days_org_local ON cash_days (org, local_id)',
+  ],
+  business_profiles: ['CREATE UNIQUE INDEX idx_profiles_org ON business_profiles (org)'],
+  receipts: [
+    'CREATE UNIQUE INDEX idx_receipts_org_number ON receipts (org, number)',
+    'CREATE UNIQUE INDEX idx_receipts_org_local ON receipts (org, local_id)',
+  ],
+};
 const T = (name, required = false) => ({ name, type: 'text', required });
-const N = (name) => ({ name, type: 'number' });
-const B = (name) => ({ name, type: 'bool' });
+const N = (name) => ({ name, type: 'number' });const B = (name) => ({ name, type: 'bool' });
 const S = (name, values) => ({ name, type: 'select', values, maxSelect: 1 });
 const J = (name) => ({ name, type: 'json' });
 const Rel = (name, collectionId, required = false, extra = {}) => ({ name, type: 'relation', collectionId, required, ...extra });
@@ -96,6 +114,20 @@ try {
       log(`Creando ${def.name}…`);
       const created = await pb.collections.create({ ...def, ...rules });
       ids[def.name] = created.id;
+    }
+    // Índices únicos (no fatal: avisa si hay duplicados viejos que limpiar).
+    const wantIdx = IDX[def.name] ?? [];
+    if (wantIdx.length) {
+      try {
+        const col = await pb.collections.getOne(ids[def.name]);
+        const missingIdx = wantIdx.filter((i) => !(col.indexes ?? []).includes(i));
+        if (missingIdx.length) {
+          await pb.collections.update(ids[def.name], { indexes: [...(col.indexes ?? []), ...missingIdx] });
+          log(`Índices de ${def.name}: ${missingIdx.length} agregados.`);
+        }
+      } catch (e) {
+        log(`Índices de ${def.name} NO aplicados: ${e?.response?.data?.message || e?.message}. Limpiá duplicados y reintentá.`);
+      }
     }
   }
   log('Listo. Las reglas y campos de ZT Gestión quedaron protegidos.');
