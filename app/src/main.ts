@@ -6,7 +6,9 @@ import {
   pullProducts, saveProductLocal, deleteProductLocal, newLocalProduct,
   createSaleOffline, syncOutbox, salesHistoryCloud, listMembers,
   hashPin, setLocalSession, getLocalSession,
-  TICKET_STATUSES, pullTickets, createTicket, updateTicketStatus, getCashDay, openCashDay, closeCashDay
+  TICKET_STATUSES, pullTickets, createTicket, updateTicketStatus, getCashDay, openCashDay, closeCashDay,
+  getBusinessProfile, saveBusinessProfile, listReceipts, createReceipt, deleteReceipt, receiptTotals,
+  RECEIPT_TITLES, RECEIPT_STATUS
 } from './lib/store';
 
 const app = document.getElementById('app')!;
@@ -169,8 +171,11 @@ function statusPills(syncMsg = '') {
   return `${net}${cloud}${syncMsg ? `<span class="pill">${esc(syncMsg)}</span>` : ''}`;
 }
 
+const OUT_ICON = '<svg class="out-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>';
+
 function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: string; role?: string }[]; org?: string; email?: string; syncMsg?: string } = {}) {
   const isOwner = opts.orgs?.some((o) => o.id === opts.org && o.role === 'dueno') ?? false;
+  const titles: Record<string, string> = { panel: 'Panel', ventas: 'Vender', productos: 'Stock', caja: 'Caja', tickets: 'Tickets', recibos: 'Recibos', equipo: 'Negocio y equipo', admin: 'Admin' };
   const nav = (cls: string) => `
     <div class="side">
       <div class="brand"><i>Z</i> ZT Gestión</div>
@@ -180,13 +185,13 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
         <a href="#/productos" class="${tab === 'productos' ? 'on' : ''}">▤ Stock</a>
         <a href="#/caja" class="${tab === 'caja' ? 'on' : ''}">💵 Caja</a>
         <a href="#/tickets" class="${tab === 'tickets' ? 'on' : ''}">🧾 Tickets</a>
+        <a href="#/recibos" class="${tab === 'recibos' ? 'on' : ''}">🧷 Recibos</a>
         <a href="#/equipo" class="${tab === 'equipo' ? 'on' : ''}">⛁ Equipo</a>
         ${isOwner ? `<a href="#/admin" class="${tab === 'admin' ? 'on' : ''}">⚙ Admin</a>` : ''}
         <button class="navdl" data-install>⬇ Descargar app</button>
       </nav>
       <div style="margin-top:auto;display:flex;flex-direction:column;gap:.5rem">
         <span class="mut">${esc(opts.email ?? '')}</span>
-        <button class="btn ghost small" id="btnOut">Salir</button>
       </div>
     </div>`;
   const orgSel = opts.orgs?.length
@@ -196,8 +201,8 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
     <div class="main">
       <div id="netbar" class="netbar" style="display:none">📴 <b>Sin internet.</b>&nbsp;Seguís vendiendo; las ventas quedan en este equipo y se suben al iniciar sesión.&nbsp;<button class="btn small" id="netRetry">Probar conexión</button></div>
       <div class="topbar">
-        <div class="row"><h1>${tab === 'panel' ? 'Panel' : tab === 'ventas' ? 'Vender' : tab === 'productos' ? 'Stock' : tab === 'equipo' ? 'Negocio y equipo' : ''}</h1>${orgSel}</div>
-        <div class="row">${statusPills(opts.syncMsg)}</div>
+        <div class="row"><h1>${titles[tab] ?? ''}</h1>${orgSel}</div>
+        <div class="row">${statusPills(opts.syncMsg)}<button class="btn ghost small topbar-out" id="btnOutTop" data-logout title="Cerrar sesión">${OUT_ICON} Salir</button></div>
       </div>
       ${inner}
       <nav class="mobnav">
@@ -206,19 +211,27 @@ function shell(inner: string, tab = '', opts: { orgs?: { id: string; name: strin
         <a href="#/productos" class="${tab === 'productos' ? 'on' : ''}">Stock</a>
         <a href="#/caja" class="${tab === 'caja' ? 'on' : ''}">Caja</a>
         <a href="#/tickets" class="${tab === 'tickets' ? 'on' : ''}">Tickets</a>
+        <a href="#/recibos" class="${tab === 'recibos' ? 'on' : ''}">Recibos</a>
         <a href="#/equipo" class="${tab === 'equipo' ? 'on' : ''}">Equipo</a>
         ${isOwner ? `<a href="#/admin" class="${tab === 'admin' ? 'on' : ''}">Admin</a>` : ''}
       </nav>
     </div></div>`;
 }
 
+async function doSignOut() {
+  if (!confirm('¿Cerrar sesión en este equipo? Las ventas pendientes quedan guardadas y se suben al volver a entrar.')) return;
+  try { await signOut(); } catch { /* seguimos con limpieza local igual */ }
+  setLocalSession(null); // se cierra la caja, pero el PIN queda para reabrir offline
+  localStorage.removeItem('zt_org');
+  sessionStorage.removeItem('zt_force_local');
+  location.hash = '#/login';
+  await router();
+}
+
 function bindCommon(orgs: { id: string; name: string }[], org: string) {
-  const b = document.getElementById('btnOut');
-  if (b) b.onclick = async () => {
-    await signOut().catch(() => {});
-    setLocalSession(null); // se cierra la caja, pero el PIN queda para reabrir offline
-    localStorage.removeItem('zt_org'); location.hash = '#/login'; router();
-  };
+  document.querySelectorAll<HTMLButtonElement>('[data-logout]').forEach((b) => {
+    b.onclick = () => { void doSignOut(); };
+  });
   const s = document.getElementById('orgSel') as HTMLSelectElement | null;
   if (s) s.onchange = () => {
     setOrg(s.value);
@@ -463,11 +476,10 @@ async function vPanel() {
       <p class="mut">La dirección de PocketBase responde, pero todavía no tiene las colecciones de ZT Gestión. Por seguridad, la app ya no pide ni recibe la contraseña del administrador.</p>
       <p class="pill bad">${esc(cloudError)}</p>
       <p class="mut">Cargá las colecciones y sus reglas desde el servidor con <b>npm run setup:pocketbase</b>, siguiendo <b>app/pocketbase/collections.md</b>. Después volvé a intentar.</p>
-      <div class="row"><button class="btn" id="bReload">Reintentar conexión</button><button class="btn ghost" id="bOut2">Salir</button></div>
+      <div class="row"><button class="btn" id="bReload">Reintentar conexión</button></div>
     </div></div>`, 'panel', { email: (user as any)?.email });
     bindCommon(list, cur);
     (document.getElementById('bReload') as HTMLButtonElement).onclick = () => router();
-    (document.getElementById('bOut2') as HTMLButtonElement).onclick = async () => { await signOut().catch(() => {}); location.hash = '#/login'; };
     return;
   }
   if (!cur) {
@@ -1011,7 +1023,7 @@ async function vEquipo() {
     <div class="card span12"><h2>Abrir la caja sin internet</h2>
       <p class="mut" id="pinState">Reviso este equipo…</p>
       <div class="field"><label for="pinNew">PIN de este vendedor</label><div class="row"><input id="pinNew" inputmode="numeric" maxlength="12" placeholder="6 números" style="max-width:220px"/><button class="btn small" id="bPinSave">Guardar o cambiar PIN</button></div><small class="hint">El PIN queda guardado solamente en este dispositivo. Sirve para vender cuando se corta internet.</small></div>
-    </div></div>`, 'equipo', { orgs: list, org: cur, email: (user as any)?.email });
+    </div>`, 'equipo', { orgs: list, org: cur, email: (user as any)?.email });
   bindCommon(list, cur);
   if (!canManageTeam) (document.getElementById('mManageTools') as HTMLElement | null)?.setAttribute('hidden', 'true');
   bindMyIdCopy();
@@ -1070,7 +1082,217 @@ async function vEquipo() {
   };
 }
 
+// ---------- Recibos universales (cualquier rubro, imprimible) ----------
+function printReceiptHTML(r: any): string {
+  const date = new Date(r.createdAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const rows = (r.items || []).map((i: any) => `<tr><td>${esc(i.desc)}<br/><small>${i.qty} x ${fmt(i.price)}</small></td><td style="text-align:right">${fmt(i.qty * i.price)}</td></tr>`).join('');
+  return `<div class="rc-print">
+    <div class="rc-head"><div class="rc-logo">${esc((r.biz_name || 'Mi negocio').charAt(0).toUpperCase())}</div>
+      <div><h2>${esc(r.biz_name || 'Mi negocio')}</h2><p>${esc(r.biz_address || '')}${r.biz_phone ? ' · ' + esc(r.biz_phone) : ''}${r.biz_cuit ? '<br/>CUIT: ' + esc(r.biz_cuit) : ''}</p></div></div>
+    <div class="rc-title"><b>${esc(r.title || 'Recibo')}</b><span>N° ${esc(r.number)}</span></div>
+    <p class="rc-date">Fecha: ${date}${r.seller ? ' · Vendedor: ' + esc(r.seller) : ''}</p>
+    <div class="rc-client"><b>Cliente:</b> ${esc(r.client_name)}${r.client_doc ? ' · DNI/CUIT: ' + esc(r.client_doc) : ''}${r.client_phone ? '<br/>Tel: ' + esc(r.client_phone) : ''}</div>
+    ${r.device ? `<div class="rc-client"><b>Equipo:</b> ${esc(r.device)}${r.device_detail ? ' · ' + esc(r.device_detail) : ''}${r.problem ? '<br/><b>Falla:</b> ' + esc(r.problem) : ''}</div>` : ''}
+    <table class="rc-table"><tbody>${rows}</tbody></table>
+    <div class="rc-totals"><div><span>Subtotal</span><b>${fmt(r.subtotal)}</b></div>${r.discount ? `<div><span>Descuento</span><b>− ${fmt(r.discount)}</b></div>` : ''}<div class="rc-grand"><span>TOTAL</span><b>${fmt(r.total)}</b></div>
+    <div><span>Paga con / Recibido</span><b>${fmt(r.received)}</b></div><div><span>Vuelto</span><b>${fmt(r.change)}</b></div></div>
+    <p class="rc-meta">Pago: ${esc(r.pay_method)} · Estado: ${esc(r.status)}</p>
+    ${r.notes ? `<p class="rc-notes"><b>Notas:</b> ${esc(r.notes)}</p>` : ''}
+    ${r.warranty_text ? `<p class="rc-notes"><b>Garantía:</b> ${esc(r.warranty_text)}</p>` : ''}
+    <p class="rc-foot">${esc(r.biz_footer || '')}</p>
+    <div class="rc-sign"><div>Firma comercio</div><div>Firma cliente</div></div>
+  </div>`;
+}
+
+function doPrintReceipt(r: any) {
+  const w = window.open('', '_blank', 'width=420,height=700');
+  if (!w) { toast('El navegador bloqueó la ventana de impresión'); return; }
+  w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>${esc(r.title)} ${esc(r.number)}</title><style>
+    *{box-sizing:border-box} body{font-family:monospace,system-ui,sans-serif;margin:0;padding:12px;color:#111}
+    .rc-print{max-width:300px;margin:0 auto} .rc-head{display:flex;gap:10px;align-items:center;border-bottom:2px dashed #111;padding-bottom:8px}
+    .rc-logo{width:42px;height:42px;border-radius:10px;background:#111;color:#fff;display:grid;place-items:center;font-weight:900;font-size:1.3rem}
+    h2{margin:0;font-size:1.05rem} p{margin:2px 0;font-size:.78rem} .rc-title{display:flex;justify-content:space-between;align-items:center;margin:8px 0;font-size:.9rem;border-bottom:1px dashed #111;padding-bottom:6px}
+    .rc-date,.rc-meta{font-size:.75rem} .rc-client{font-size:.78rem;border:1px dashed #111;border-radius:8px;padding:6px;margin:6px 0}
+    .rc-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:6px 0} .rc-table td{border-bottom:1px dotted #999;padding:4px 0}
+    .rc-totals{font-size:.8rem;margin-top:6px} .rc-totals>div{display:flex;justify-content:space-between;padding:2px 0}
+    .rc-grand{font-size:1rem;font-weight:900;border-top:2px solid #111;border-bottom:2px solid #111;margin:4px 0;padding:4px 0 !important}
+    .rc-notes{font-size:.72rem} .rc-foot{text-align:center;font-size:.72rem;margin-top:8px} .rc-sign{display:flex;justify-content:space-between;margin-top:26px;font-size:.7rem}
+    .rc-sign div{border-top:1px solid #111;padding-top:4px;width:45%;text-align:center}
+    @media print{body{padding:0}}</style></head><body>${printReceiptHTML(r)}<script>onload=()=>{setTimeout(()=>{print();},300)}<\/script></body></html>`);
+  w.document.close();
+}
+
+async function vRecibos() {
+  barcodeHandler = null;
+  const user = await requireUser();
+  const { list, cur, cloudError } = await loadOrgs();
+  if (cloudError || !cur) { location.hash = '#/panel'; return; }
+  const org = cur;
+  const orgName = list.find((o) => o.id === org)?.name ?? 'Mi negocio';
+  const profile = await getBusinessProfile(org, orgName);
+  const receipts = await listReceipts(org);
+
+  app.innerHTML = shell(`<div class="bento">
+    <div class="card span8">
+      <div class="row" style="justify-content:space-between"><div><h2>Recibos · cualquier rubro</h2><p class="mut">Emití un comprobante digital con el nombre de tu local e imprimilo. Sirve para tienda de celulares, taller, kiosco, peluquería, etc.</p></div><button class="btn small" id="bNewRc">+ Nuevo recibo</button></div>
+      <div class="row" style="margin:.6rem 0"><input id="rcQ" placeholder="Buscar por cliente, número o equipo…" style="max-width:320px"/></div>
+      <div class="rc-list" id="rcList">${receipts.map((r) => `
+        <div class="rc-row" data-name="${esc(`${r.client_name} ${r.number} ${r.device} ${r.title}`.toLowerCase())}"><div><b>${esc(r.number)} · ${esc(r.title)}</b><small>${esc(r.client_name)} · ${fmt(r.total)} · ${new Date(r.createdAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${esc(r.status)}</small></div>
+        <div class="row"><button class="btn ghost small" data-view="${r.id}">Ver / Imprimir</button><button class="btn ghost small" data-del-rc="${r.id}">Borrar</button></div></div>`).join('') || '<div class="empty-dashboard">🧷 Todavía no hay recibos. Creá el primero con + Nuevo recibo.</div>'}</div>
+    </div>
+    <div class="card span4">
+      <h2>Datos de tu local</h2><p class="mut">Esto sale impreso grande en cada recibo.</p>
+      <div class="field"><label>Nombre del local *</label><input id="bizName" value="${esc(profile.name)}" placeholder="Ej: ZonaTecno Celulares"/></div>
+      <div class="grid2" style="margin-top:.5rem"><div class="field"><label>Teléfono / WhatsApp</label><input id="bizPhone" value="${esc(profile.phone)}" placeholder="3755 00-0000"/></div><div class="field"><label>CUIT (opcional)</label><input id="bizCuit" value="${esc(profile.cuit)}" placeholder="20-..."/></div></div>
+      <div class="field" style="margin-top:.5rem"><label>Dirección</label><input id="bizAddr" value="${esc(profile.address)}" placeholder="Av. Libertador 123, San Vicente"/></div>
+      <div class="grid2" style="margin-top:.5rem"><div class="field"><label>Prefijo</label><input id="bizPrefix" value="${esc(profile.prefix)}" maxlength="4"/></div><div class="field"><label>Próximo N°</label><input id="bizNext" type="number" min="1" value="${profile.next_number}"/></div></div>
+      <div class="field" style="margin-top:.5rem"><label>Pie del recibo</label><input id="bizFooter" value="${esc(profile.footer)}"/></div>
+      <div class="field" style="margin-top:.5rem"><label>Garantía por defecto</label><input id="bizWarranty" value="${esc(profile.warranty_text)}"/></div>
+      <div class="row" style="margin-top:.6rem"><button class="btn small" id="bSaveBiz">Guardar datos</button></div>
+      <p class="mut" style="margin-top:.6rem">Próximo comprobante: <b>${esc(profile.prefix)}-${String(profile.next_number).padStart(6, '0')}</b></p>
+    </div>
+    <div class="card span12" id="rcEditor" style="display:none">
+      <h2 id="rcEdTitle">Nuevo recibo</h2>
+      <div class="grid2">
+        <div class="field"><label>Tipo de comprobante</label><select id="rcTitle">${RECEIPT_TITLES.map((t) => `<option>${t}</option>`).join('')}</select></div>
+        <div class="grid2"><div class="field"><label>Medio de pago</label><select id="rcPay"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="mercadopago">MercadoPago</option><option value="tarjeta">Tarjeta</option><option value="cuenta corriente">Cuenta corriente</option></select></div>
+        <div class="field"><label>Estado</label><select id="rcStatus">${RECEIPT_STATUS.map((s) => `<option value="${s}">${s}</option>`).join('')}</select></div></div>
+      </div>
+      <div class="grid2" style="margin-top:.6rem">
+        <div class="field"><label>Cliente *</label><input id="rcClient" placeholder="Nombre y apellido"/></div>
+        <div class="grid2"><div class="field"><label>Teléfono</label><input id="rcPhone" placeholder="3755 00-0000"/></div><div class="field"><label>DNI / CUIT</label><input id="rcDoc" placeholder="Opcional"/></div></div>
+      </div>
+      <details class="rc-details"><summary>📱 Datos del equipo (opcional · taller / celulares)</summary>
+        <div class="grid2" style="margin-top:.5rem"><div class="field"><label>Equipo</label><input id="rcDevice" placeholder="Ej: Samsung A12 / iPhone 11"/></div><div class="field"><label>IMEI / Serie / Color</label><input id="rcDeviceDetail" placeholder="Ej: IMEI 35000... · Negro"/></div></div>
+        <div class="field" style="margin-top:.5rem"><label>Falla / Servicio</label><input id="rcProblem" placeholder="Ej: no enciende, cambio de pantalla"/></div>
+      </details>
+      <h3 style="margin-top:.8rem">Conceptos (cualquier rubro)</h3>
+      <div id="rcItems"></div>
+      <div class="row" style="margin:.4rem 0"><button class="btn ghost small" id="bAddItem">+ Agregar línea</button><button class="btn ghost small" id="bFromStock">Traer del stock</button></div>
+      <div class="grid2"><div class="field"><label>Descuento ($)</label><input id="rcDiscount" type="number" min="0" value="0"/></div><div class="field"><label>Recibido ($)</label><input id="rcReceived" type="number" min="0" value="0"/></div></div>
+      <div class="field" style="margin-top:.5rem"><label>Notas (opcional)</label><input id="rcNotes" placeholder="Ej: se entrega en 48hs, señó $10.000"/></div>
+      <div class="field" style="margin-top:.5rem"><label>Garantía de este recibo</label><input id="rcWarranty" value="${esc(profile.warranty_text)}"/></div>
+      <div class="rc-total-line"><span>Total</span><strong id="rcTotalPreview">$0</strong></div>
+      <div class="row" style="margin-top:.6rem"><button class="btn" id="bSaveRc">Guardar e imprimir</button><button class="btn ghost" id="bCancelRc">Cancelar</button></div>
+    </div>
+    <div class="card span12" id="rcView" style="display:none"></div>
+  </div>`, 'recibos', { orgs: list, org, email: (user as any)?.email });
+  bindCommon(list, org);
+
+  (document.getElementById('bSaveBiz') as HTMLButtonElement).onclick = async () => {
+    const name = (document.getElementById('bizName') as HTMLInputElement).value.trim();
+    if (name.length < 2) { toast('Poné el nombre de tu local'); return; }
+    profile.name = name;
+    profile.phone = (document.getElementById('bizPhone') as HTMLInputElement).value.trim();
+    profile.cuit = (document.getElementById('bizCuit') as HTMLInputElement).value.trim();
+    profile.address = (document.getElementById('bizAddr') as HTMLInputElement).value.trim();
+    profile.prefix = ((document.getElementById('bizPrefix') as HTMLInputElement).value.trim() || 'R').slice(0, 4);
+    profile.next_number = Math.max(1, Number((document.getElementById('bizNext') as HTMLInputElement).value || 1));
+    profile.footer = (document.getElementById('bizFooter') as HTMLInputElement).value.trim();
+    profile.warranty_text = (document.getElementById('bizWarranty') as HTMLInputElement).value.trim();
+    await saveBusinessProfile(profile);
+    toast('Datos del local guardados ✓');
+    router();
+  };
+
+  (document.getElementById('rcQ') as HTMLInputElement).oninput = (e) => {
+    const v = (e.target as HTMLInputElement).value.trim().toLowerCase();
+    document.querySelectorAll<HTMLElement>('#rcList .rc-row').forEach((row) => {
+      row.style.display = !v || (row.dataset.name ?? '').includes(v) ? '' : 'none';
+    });
+  };
+
+  const itemsEl = document.getElementById('rcItems') as HTMLElement;
+  type Row = { desc: string; qty: number; price: number };
+  let rows: Row[] = [{ desc: '', qty: 1, price: 0 }];
+  const drawRows = () => {
+    itemsEl.innerHTML = rows.map((r, i) => `<div class="rc-item-row">
+      <input data-desc="${i}" placeholder="Descripción · Ej: Cambio de pantalla Samsung A12" value="${esc(r.desc)}"/>
+      <input data-qty="${i}" type="number" min="1" value="${r.qty}" title="Cantidad"/>
+      <input data-price="${i}" type="number" min="0" value="${r.price}" title="Precio"/>
+      <button class="btn ghost small" data-rm="${i}">✕</button></div>`).join('');
+    itemsEl.querySelectorAll('[data-desc]').forEach((el) => (el as HTMLInputElement).oninput = (e) => { rows[Number((e.target as HTMLInputElement).dataset.desc)].desc = (e.target as HTMLInputElement).value; preview(); });
+    itemsEl.querySelectorAll('[data-qty]').forEach((el) => (el as HTMLInputElement).oninput = (e) => { rows[Number((e.target as HTMLInputElement).dataset.qty)].qty = Number((e.target as HTMLInputElement).value || 0); preview(); });
+    itemsEl.querySelectorAll('[data-price]').forEach((el) => (el as HTMLInputElement).oninput = (e) => { rows[Number((e.target as HTMLInputElement).dataset.price)].price = Number((e.target as HTMLInputElement).value || 0); preview(); });
+    itemsEl.querySelectorAll('[data-rm]').forEach((b) => (b as HTMLButtonElement).onclick = () => { if (rows.length > 1) rows.splice(Number((b as HTMLButtonElement).dataset.rm), 1); drawRows(); preview(); });
+  };
+  const preview = () => {
+    const d = Number((document.getElementById('rcDiscount') as HTMLInputElement)?.value || 0);
+    const { total } = receiptTotals(rows, d);
+    (document.getElementById('rcTotalPreview') as HTMLElement).textContent = fmt(total);
+    const rec = document.getElementById('rcReceived') as HTMLInputElement;
+    if (rec && !rec.dataset.touched) rec.value = String(total);
+  };
+  (document.getElementById('rcDiscount') as HTMLInputElement).oninput = preview;
+  (document.getElementById('rcReceived') as HTMLInputElement).oninput = (e) => { (e.target as HTMLInputElement).dataset.touched = '1'; };
+  drawRows(); preview();
+
+  (document.getElementById('bAddItem') as HTMLButtonElement).onclick = () => { rows.push({ desc: '', qty: 1, price: 0 }); drawRows(); };
+  (document.getElementById('bFromStock') as HTMLButtonElement).onclick = async () => {
+    const prods = (await db.products.where('org_id').equals(org).toArray()).filter((p) => !p.deleted);
+    if (!prods.length) { toast('No hay stock cargado'); return; }
+    const names = prods.slice(0, 30).map((p, i) => `${i + 1}. ${p.name} — ${fmt(p.price)}`).join('\n');
+    const pick = window.prompt('Escribí el número del producto:\n' + names);
+    const idx = Number(pick || '') - 1;
+    if (prods[idx]) { rows.push({ desc: prods[idx].name, qty: 1, price: prods[idx].price }); drawRows(); preview(); }
+  };
+  (document.getElementById('bNewRc') as HTMLButtonElement).onclick = () => {
+    (document.getElementById('rcEditor') as HTMLElement).style.display = 'block';
+    (document.getElementById('rcView') as HTMLElement).style.display = 'none';
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  };
+  (document.getElementById('bCancelRc') as HTMLButtonElement).onclick = () => ((document.getElementById('rcEditor') as HTMLElement).style.display = 'none');
+
+  (document.getElementById('bSaveRc') as HTMLButtonElement).onclick = async () => {
+    const btn = document.getElementById('bSaveRc') as HTMLButtonElement;
+    btn.disabled = true;
+    try {
+      const fresh = await getBusinessProfile(org, orgName);
+      const r = await createReceipt(org, {
+        title: (document.getElementById('rcTitle') as HTMLSelectElement).value,
+        client_name: (document.getElementById('rcClient') as HTMLInputElement).value,
+        client_phone: (document.getElementById('rcPhone') as HTMLInputElement).value,
+        client_doc: (document.getElementById('rcDoc') as HTMLInputElement).value,
+        device: (document.getElementById('rcDevice') as HTMLInputElement).value,
+        device_detail: (document.getElementById('rcDeviceDetail') as HTMLInputElement).value,
+        problem: (document.getElementById('rcProblem') as HTMLInputElement).value,
+        items: rows.map((x) => ({ desc: x.desc.trim(), qty: Math.max(1, Math.round(Number(x.qty) || 1)), price: Number(x.price) || 0 })),
+        discount: Number((document.getElementById('rcDiscount') as HTMLInputElement).value || 0),
+        received: Number((document.getElementById('rcReceived') as HTMLInputElement).value || 0),
+        pay_method: (document.getElementById('rcPay') as HTMLSelectElement).value,
+        status: (document.getElementById('rcStatus') as HTMLSelectElement).value as any,
+        notes: (document.getElementById('rcNotes') as HTMLInputElement).value,
+        warranty_text: (document.getElementById('rcWarranty') as HTMLInputElement).value
+      }, fresh, (user as any)?.email ?? '');
+      toast(`Recibo ${r.number} guardado ✓`);
+      doPrintReceipt(r);
+      router();
+    } catch (e: any) { toast(e?.message ?? 'No pude guardar el recibo'); btn.disabled = false; }
+  };
+
+  document.querySelectorAll('[data-view]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
+    const r = receipts.find((x) => x.id === (b as HTMLButtonElement).dataset.view);
+    if (!r) return;
+    const box = document.getElementById('rcView') as HTMLElement;
+    box.style.display = 'block';
+    box.innerHTML = `<div class="row" style="justify-content:space-between"><h2>${esc(r.title)} ${esc(r.number)}</h2><div class="row"><button class="btn small" id="rcPrint">🖨 Imprimir</button><button class="btn ghost small" id="rcWA">WhatsApp</button><button class="btn ghost small" id="rcClose">Cerrar</button></div></div>${printReceiptHTML(r)}`;
+    (document.getElementById('rcClose') as HTMLButtonElement).onclick = () => (box.style.display = 'none');
+    (document.getElementById('rcPrint') as HTMLButtonElement).onclick = () => doPrintReceipt(r);
+    (document.getElementById('rcWA') as HTMLButtonElement).onclick = () => {
+      const msg = `${r.title} ${r.number} · ${r.biz_name}%0ATotal: ${fmt(r.total)} (${r.status})%0ACliente: ${r.client_name}%0AGracias por su compra!`;
+      window.open(`https://wa.me/${(r.client_phone || '').replace(/\D/g, '')}?text=${msg}`, '_blank');
+    };
+    box.scrollIntoView({ behavior: 'smooth' });
+  });
+  document.querySelectorAll('[data-del-rc]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
+    if (!confirm('¿Borrar este recibo de este equipo?')) return;
+    await deleteReceipt((b as HTMLButtonElement).dataset.delRc!);
+    toast('Recibo borrado'); router();
+  });
+}
+
 export async function router() {
+  barcodeHandler = null;
   const h = location.hash || '#/panel';
   try {
     if (h.startsWith('#/registro')) await vLogin('up');
@@ -1080,6 +1302,7 @@ export async function router() {
     else if (h.startsWith('#/equipo')) await vEquipo();
     else if (h.startsWith('#/caja')) await vCaja();
     else if (h.startsWith('#/tickets')) await vTickets();
+    else if (h.startsWith('#/recibos')) await vRecibos();
     else if (h.startsWith('#/admin')) await vAdmin();
     else await vPanel();
   } catch (e: any) {

@@ -68,6 +68,63 @@ export interface LocalPin {
   updatedAt: number;
 }
 
+export interface ReceiptItem {
+  desc: string;
+  qty: number;
+  price: number;
+}
+
+export interface LocalReceipt {
+  id: string;
+  org_id: string;
+  number: string; // ej: R-000023
+  seq: number;
+  title: string; // Recibo | Presupuesto | Orden de reparación | etc.
+  createdAt: number;
+  updatedAt: number;
+  client_name: string;
+  client_phone: string;
+  client_doc: string;
+  // Bloque opcional taller / cualquier rubro
+  device: string;
+  device_detail: string;
+  problem: string;
+  items: ReceiptItem[];
+  discount: number;
+  subtotal: number;
+  total: number;
+  pay_method: string;
+  received: number;
+  change: number;
+  status: 'pagado' | 'seña' | 'pendiente';
+  notes: string;
+  warranty_text: string;
+  seller: string;
+  // Foto del negocio al momento de emitir (para imprimir aunque cambie después)
+  biz_name: string;
+  biz_address: string;
+  biz_phone: string;
+  biz_cuit: string;
+  biz_footer: string;
+  dirty?: number;
+  lastError?: string;
+  local_id: string;
+}
+
+export interface BusinessProfile {
+  org_id: string;
+  name: string;
+  address: string;
+  phone: string;
+  cuit: string;
+  footer: string;
+  prefix: string;
+  next_number: number;
+  warranty_text: string;
+  updatedAt: number;
+  dirty?: number;
+}
+
 class ZTDB extends Dexie {
   products!: Table<LocalProduct, string>;
   outbox!: Table<OutboxSale, string>;
@@ -75,6 +132,8 @@ class ZTDB extends Dexie {
   cashDays!: Table<LocalCashDay, string>;
   meta!: Table<{ k: string; v: string }, string>;
   pins!: Table<LocalPin, string>;
+  receipts!: Table<LocalReceipt, string>;
+  profiles!: Table<BusinessProfile, string>;
   constructor() {
     super('zt_gestion');
     this.version(1).stores({
@@ -93,6 +152,16 @@ class ZTDB extends Dexie {
       outbox: 'id, org_id, createdAt',
       tickets: 'id, org_id, code, status, createdAt',
       cashDays: 'id, org_id, day',
+      meta: 'k',
+      pins: 'userId'
+    });
+    this.version(4).stores({
+      products: 'id, org_id, updatedAt, barcode',
+      outbox: 'id, org_id, createdAt',
+      tickets: 'id, org_id, code, status, createdAt',
+      cashDays: 'id, org_id, day',
+      receipts: 'id, org_id, number, createdAt',
+      profiles: 'org_id',
       meta: 'k',
       pins: 'userId'
     });

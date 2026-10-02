@@ -1,5 +1,5 @@
 import { pb, isCloudConfigured } from './pb';
-import { db, uid, type LocalProduct, type OutboxSale, type LocalTicket, type LocalCashDay } from './localdb';
+import { db, uid, type LocalProduct, type OutboxSale, type LocalTicket, type LocalCashDay, type LocalReceipt, type BusinessProfile } from './localdb';
 
 export interface Org { id: string; name: string; slug: string; }
 export interface Membership { org_id: string; role: string; orgs: Org; }
@@ -459,6 +459,8 @@ async function syncOutboxNow(org_id: string): Promise<SyncResult> {
   }
   await pushTickets(org_id);
   await pushCashDays(org_id);
+  await pushReceipts(org_id).catch(() => undefined);
+  await pushProfiles(org_id).catch(() => undefined);
   return { synced: ok, pending: await db.outbox.where('org_id').equals(org_id).count() };
 }
 
@@ -552,6 +554,181 @@ export async function pushCashDays(org_id: string) {
       else await pb.collection('cash_days').create(payload);
       await db.cashDays.update(c.id, { dirty: 0, lastError: '' });
     } catch (e) { await db.cashDays.update(c.id, { lastError: errorText(e, 'caja') }); }
+  }
+}
+
+// ---- Recibos universales (cualquier rubro, con nombre del local, imprimible) ----
+export const RECEIPT_TITLES = ['Recibo', 'Presupuesto', 'Orden de reparación', 'Nota de venta', 'Seña'] as const;
+export const RECEIPT_STATUS: LocalReceipt['status'][] = ['pagado', 'seña', 'pendiente'];
+
+export function defaultProfile(org_id: string, fallbackName = 'Mi negocio'): BusinessProfile {
+  return {
+    org_id, name: fallbackName, address: '', phone: '', cuit: '',
+    footer: 'Gracias por su compra. Este comprobante no es factura fiscal.',
+    prefix: 'R', next_number: 1,
+    warranty_text: 'Garantía de 30 días en mano de obra. No cubre golpes, humedad ni software.',
+    updatedAt: Date.now(), dirty: 0
+  };
+}
+
+export async function getBusinessProfile(org_id: string, fallbackName = 'Mi negocio'): Promise<BusinessProfile> {
+  let p = await db.profiles.get(org_id);
+  if (!p) {
+    // Intento traer de la nube antes de crear uno local
+    if (isCloudConfigured() && navigator.onLine && pb.authStore.isValid) {
+      try {
+        const rows = await pb.collection('business_profiles').getFullList({ filter: `org="${org_id}"` });
+        const r: any = rows[0];
+        if (r) {
+          p = {
+            org_id, name: r.name ?? fallbackName, address: r.address ?? '', phone: r.phone ?? '',
+            cuit: r.cuit ?? '', footer: r.footer ?? defaultProfile(org_id, fallbackName).footer,
+            prefix: r.prefix ?? 'R', next_number: Number(r.next_number ?? 1),
+            warranty_text: r.warranty_text ?? defaultProfile(org_id, fallbackName).warranty_text,
+            updatedAt: Date.now(), dirty: 0
+          };
+          await db.profiles.put(p);
+          return p;
+        }
+      } catch { /* seguimos local */ }
+    }
+    p = defaultProfile(org_id, fallbackName);
+    await db.profiles.put(p);
+  }
+  return p;
+}
+
+export async function saveBusinessProfile(p: BusinessProfile) {
+  p.updatedAt = Date.now();
+  p.dirty = 1;
+  await db.profiles.put(p);
+  void pushProfiles(p.org_id).catch(() => undefined);
+}
+
+export async function pushProfiles(org_id: string) {
+  if (!isCloudConfigured() || !navigator.onLine || !pb.authStore.isValid) return;
+  const p = await db.profiles.get(org_id);
+  if (!p || !p.dirty) return;
+  try {
+    const payload = {
+      org: org_id, name: p.name, address: p.address, phone: p.phone, cuit: p.cuit,
+      footer: p.footer, prefix: p.prefix, next_number: p.next_number, warranty_text: p.warranty_text
+    };
+    let remote: any = null;
+    try { remote = await pb.collection('business_profiles').getFirstListItem(`org="${org_id}"`); }
+    catch (e) { if (!isNotFound(e)) throw e; }
+    if (remote) await pb.collection('business_profiles').update(remote.id, payload);
+    else await pb.collection('business_profiles').create(payload);
+    await db.profiles.update(org_id, { dirty: 0 });
+  } catch (e) { console.warn('[ZT profiles]', errorText(e)); }
+}
+
+export function receiptTotals(items: { qty: number; price: number }[], discount = 0) {
+  const subtotal = items.reduce((a, i) => a + Number(i.qty || 0) * Number(i.price || 0), 0);
+  const total = Math.max(0, subtotal - Number(discount || 0));
+  return { subtotal, total };
+}
+
+export async function listReceipts(org_id: string): Promise<LocalReceipt[]> {
+  if (isCloudConfigured() && navigator.onLine && pb.authStore.isValid) {
+    try {
+      const rows = await pb.collection('receipts').getFullList({ filter: `org="${org_id}"`, sort: '-created' });
+      if (rows.length) {
+        const mapped: LocalReceipt[] = (rows as any[]).map((r) => ({
+          id: r.local_id || r.id, org_id, number: r.number ?? '', seq: Number(r.seq ?? 0),
+          title: r.title ?? 'Recibo', createdAt: new Date(r.issued_at ?? r.created ?? Date.now()).getTime(), updatedAt: Date.now(),
+          client_name: r.client_name ?? '', client_phone: r.client_phone ?? '', client_doc: r.client_doc ?? '',
+          device: r.device ?? '', device_detail: r.device_detail ?? '', problem: r.problem ?? '',
+          items: Array.isArray(r.items) ? r.items : JSON.parse(r.items_json ?? '[]'),
+          discount: Number(r.discount ?? 0), subtotal: Number(r.subtotal ?? 0), total: Number(r.total ?? 0),
+          pay_method: r.pay_method ?? 'efectivo', received: Number(r.received ?? 0), change: Number(r.change ?? 0),
+          status: (r.status ?? 'pagado') as LocalReceipt['status'],
+          notes: r.notes ?? '', warranty_text: r.warranty_text ?? '', seller: r.seller ?? '',
+          biz_name: r.biz_name ?? '', biz_address: r.biz_address ?? '', biz_phone: r.biz_phone ?? '',
+          biz_cuit: r.biz_cuit ?? '', biz_footer: r.biz_footer ?? '',
+          dirty: 0, local_id: r.local_id ?? r.id
+        }));
+        await db.receipts.bulkPut(mapped);
+      }
+    } catch { /* seguimos local */ }
+  }
+  return db.receipts.where('org_id').equals(org_id).reverse().sortBy('createdAt');
+}
+
+export async function createReceipt(
+  org_id: string,
+  data: Partial<LocalReceipt> & { items: { desc: string; qty: number; price: number }[] },
+  profile: BusinessProfile,
+  seller = ''
+): Promise<LocalReceipt> {
+  const seq = profile.next_number || 1;
+  const number = `${profile.prefix || 'R'}-${String(seq).padStart(6, '0')}`;
+  const { subtotal, total } = receiptTotals(data.items, data.discount ?? 0);
+  const received = Number(data.received ?? total);
+  const r: LocalReceipt = {
+    id: uid(), org_id, number, seq,
+    title: data.title || 'Recibo',
+    createdAt: Date.now(), updatedAt: Date.now(),
+    client_name: (data.client_name ?? '').trim(),
+    client_phone: (data.client_phone ?? '').trim(),
+    client_doc: (data.client_doc ?? '').trim(),
+    device: (data.device ?? '').trim(),
+    device_detail: (data.device_detail ?? '').trim(),
+    problem: (data.problem ?? '').trim(),
+    items: data.items.filter((i) => i.desc.trim() || Number(i.price) > 0),
+    discount: Number(data.discount ?? 0),
+    subtotal, total,
+    pay_method: data.pay_method ?? 'efectivo',
+    received,
+    change: Math.max(0, received - total),
+    status: data.status ?? 'pagado',
+    notes: (data.notes ?? '').trim(),
+    warranty_text: data.warranty_text ?? profile.warranty_text ?? '',
+    seller,
+    biz_name: profile.name, biz_address: profile.address, biz_phone: profile.phone,
+    biz_cuit: profile.cuit, biz_footer: profile.footer,
+    dirty: 1, local_id: uid()
+  };
+  if (!r.client_name) throw new Error('Poné al menos el nombre del cliente');
+  if (!r.items.length) throw new Error('Agregá al menos un concepto al recibo');
+  await db.transaction('rw', db.receipts, db.profiles, async () => {
+    await db.receipts.add(r);
+    await db.profiles.update(org_id, { next_number: seq + 1, dirty: 1, updatedAt: Date.now() });
+  });
+  void pushReceipts(org_id).catch(() => undefined);
+  void pushProfiles(org_id).catch(() => undefined);
+  return r;
+}
+
+export async function deleteReceipt(id: string) {
+  await db.receipts.delete(id);
+  // Borrado solo local por ahora (el comprobante ya emitido no debería borrarse en nube sin auditoría).
+}
+
+export async function pushReceipts(org_id: string) {
+  if (!isCloudConfigured() || !navigator.onLine || !pb.authStore.isValid) return;
+  const rows = await db.receipts.where('org_id').equals(org_id).filter((r) => r.dirty === 1).toArray();
+  for (const r of rows) {
+    try {
+      const payload = {
+        org: org_id, number: r.number, seq: r.seq, title: r.title,
+        issued_at: new Date(r.createdAt).toISOString(),
+        client_name: r.client_name, client_phone: r.client_phone, client_doc: r.client_doc,
+        device: r.device, device_detail: r.device_detail, problem: r.problem,
+        items: r.items, items_json: JSON.stringify(r.items),
+        discount: r.discount, subtotal: r.subtotal, total: r.total,
+        pay_method: r.pay_method, received: r.received, change: r.change, status: r.status,
+        notes: r.notes, warranty_text: r.warranty_text, seller: r.seller,
+        biz_name: r.biz_name, biz_address: r.biz_address, biz_phone: r.biz_phone,
+        biz_cuit: r.biz_cuit, biz_footer: r.biz_footer, local_id: r.local_id
+      };
+      let remote: any = null;
+      try { remote = await pb.collection('receipts').getFirstListItem(`org="${org_id}" && local_id="${r.local_id}"`); }
+      catch (e) { if (!isNotFound(e)) throw e; }
+      if (remote) await pb.collection('receipts').update(remote.id, payload);
+      else await pb.collection('receipts').create(payload);
+      await db.receipts.update(r.id, { dirty: 0, lastError: '' });
+    } catch (e) { await db.receipts.update(r.id, { lastError: errorText(e, 'recibo') }); }
   }
 }
 

@@ -103,6 +103,31 @@ aplicar estas reglas en el servidor:
 - `note`: text
 - `local_id`: text
 
+## 10. business_profiles (base) — datos del local para el recibo
+
+- `org`: relation → `orgs`, required, cascade delete
+- `name`: text — nombre del local (se imprime grande)
+- `address`, `phone`, `cuit`: text
+- `footer`: text — mensaje al pie (gracias, horarios, etc.)
+- `prefix`: text — ej `R`
+- `next_number`: number — próximo número correlativo
+- `warranty_text`: text — garantía por defecto
+
+## 11. receipts (base) — recibos universales de cualquier rubro
+
+- `org`: relation → `orgs`, required, cascade delete
+- `number`: text — ej `R-000023` · `seq`: number
+- `title`: text — Recibo / Presupuesto / Orden de reparación / Nota de venta / Seña
+- `issued_at`: text — fecha de emisión
+- `client_name`, `client_phone`, `client_doc`: text
+- `device`, `device_detail` (IMEI/serie/color), `problem`: text — opcional taller/celulares
+- `items`: json + `items_json`: text — conceptos `[{desc, qty, price}]`
+- `discount`, `subtotal`, `total`, `received`, `change`: number
+- `pay_method`: text · `status`: text (`pagado`/`seña`/`pendiente`)
+- `notes`, `warranty_text`, `seller`: text
+- `biz_name`, `biz_address`, `biz_phone`, `biz_cuit`, `biz_footer`: text — foto del negocio al emitir
+- `local_id`: text — idempotencia offline
+
 ## users
 
 - `name`: text
