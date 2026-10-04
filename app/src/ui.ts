@@ -115,14 +115,18 @@ export function confirmActionPassword(email: string): Promise<boolean> {
     </div>`;
     document.body.appendChild(ov);
     const finish = (ok: boolean) => { ov.remove(); resolve(ok); };
-    (document.getElementById('confirmCancel') as HTMLButtonElement).onclick = () => finish(false);
-    (document.getElementById('confirmOk') as HTMLButtonElement).onclick = async () => {
+    const submit = async () => {
       const input = document.getElementById('confirmPw') as HTMLInputElement;
       const error = document.getElementById('confirmErr') as HTMLElement;
       if (!input.value) { error.style.display = 'block'; error.textContent = 'Escribí tu contraseña.'; return; }
       const ok = await verifyAccountPassword(email, input.value);
       if (!ok) { error.style.display = 'block'; error.textContent = 'Contraseña incorrecta.'; return; }
       finish(true);
+    };
+    (document.getElementById('confirmCancel') as HTMLButtonElement).onclick = () => finish(false);
+    (document.getElementById('confirmOk') as HTMLButtonElement).onclick = () => { void submit(); };
+    (document.getElementById('confirmPw') as HTMLInputElement).onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); void submit(); }
     };
     (document.getElementById('confirmPw') as HTMLInputElement).focus();
   });
