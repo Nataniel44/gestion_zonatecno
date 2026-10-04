@@ -64,7 +64,7 @@ export async function vProductos(q = '') {
     if (!await ensureProductAuth('crear un producto')) return;
     editing = null; openEd('Nuevo producto');
     (document.getElementById('fName') as HTMLInputElement).value = ''; (document.getElementById('fCat') as HTMLInputElement).value = 'general';
-    (document.getElementById('fPrice') as HTMLInputElement).value = ''; (document.getElementById('fStock') as HTMLInputElement).value = ''; (document.getElementById('fMin') as HTMLInputElement).value = '3';
+    (document.getElementById('fPrice') as HTMLInputElement).value = ''; (document.getElementById('fStock') as HTMLInputElement).value = ''; (document.getElementById('fMin') as HTMLInputElement).value = '';
     (document.getElementById('fBarcode') as HTMLInputElement).value = '';
   });
   (document.getElementById('bSaveScanner') as HTMLButtonElement).onclick = () => {
