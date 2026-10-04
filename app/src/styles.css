@@ -95,8 +95,13 @@ button { cursor: pointer; font: inherit; }
 .btn.small { padding: .4rem .65rem; font-size: .85rem; border-radius: 10px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-th, td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th, td { text-align: left; padding: .7rem .55rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
 th { color: var(--mut); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
+.main > .card + .card { margin-top: .9rem; }
+.stock-head { gap: .6rem; }
+.stock-head input { min-width: 0; }
+.table-wrap { margin-top: .8rem; overflow-x: auto; }
+.table-wrap table { min-width: 560px; }
 .low { color: #ff8fa3; font-weight: 800; }
 .grid2 { display: grid; gap: .7rem; grid-template-columns: 1fr 1fr; }
 .prod-grid { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
@@ -288,6 +293,9 @@ select.orgsel { max-width: 260px; }
   .chart-bar-wrap { height: 116px; }
   .chart-col small { font-size: .62rem; }
   .card table { display: block; max-width: 100%; overflow-x: auto; white-space: nowrap; border-spacing: 0; }
+  .table-wrap { margin-top: .7rem; }
+  .table-wrap table { display: table; width: 100%; min-width: 560px; white-space: normal; overflow: visible; }
+  .main > .card + .card { margin-top: .65rem; }
   .prod-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .welcome-actions .btn, .modal-card .row .btn { flex: 1 1 auto; }
   .rc-row { flex-direction: column; align-items: stretch; }
