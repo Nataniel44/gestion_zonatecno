@@ -34,6 +34,7 @@ export async function router() {
     bindCommon([], '');
   }
   refreshInstallUI();
+  document.querySelectorAll('.mobnav a.on, .nav a.on').forEach((a) => a.setAttribute('aria-current', 'page'));
 }
 
 initScanner();
