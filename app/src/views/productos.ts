@@ -3,7 +3,7 @@ import { pullProducts, saveProductLocal, deleteProductLocal, newLocalProduct } f
 import { isCloudConfigured } from '../lib/pb';
 import { app, esc, toast, fmt, confirmActionPassword, withTimeout, confirmModal } from '../ui';
 import { shell, bindCommon, navigate } from '../chrome';
-import { requireUser, loadOrgs } from '../session';
+import { requireUser, loadOrgs, isLocalContext } from '../session';
 import { getScannerSettings, setScannerSettings, scanBarcode } from '../scanner';
 
 // ---------- Stock ----------
@@ -13,7 +13,8 @@ export async function vProductos(q = '') {
   if (cloudError || !cur) { location.hash = '#/panel'; return; }
   const org = cur;
   const role = list.find((o) => o.id === org)?.role ?? 'vendedor';
-  const canManageProducts = role === 'dueno' || role === 'admin';
+  const canManageProducts = role === 'dueno' || role === 'admin' || isLocalContext(role, user);
+  const permLabel = role === '' || (user as any)?.id === 'local' ? 'Local' : role === 'dueno' ? 'Dueño' : role === 'admin' ? 'Administrador' : 'Vendedor';
   let productAuthUntil = 0;
   const ensureProductAuth = async () => {
     if (!canManageProducts) { toast('Solo el dueño o un administrador puede modificar productos'); return false; }
@@ -36,7 +37,7 @@ export async function vProductos(q = '') {
   app.innerHTML = shell(`
   <div class="card"><div class="row stock-head" style="justify-content:space-between">
     <div class="row" style="flex:1;min-width:min(100%,240px)"><input id="q" placeholder="Buscar producto…" value="${esc(q)}" style="max-width:260px;flex:1"/></div>
-    ${canManageProducts ? '<button class="btn small" id="bNew">+ Producto</button>' : '<span class="pill">Solo lectura para vendedores</span>'}
+    ${canManageProducts ? '<button class="btn small" id="bNew">+ Producto</button>' : '<span class="pill">Solo lectura para vendedores</span>'}<span class="pill">Tu permiso: ${permLabel}</span>
   </div>
   <div class="table-wrap"><table><tr><th>Producto</th><th>Precio</th><th>Stock</th><th></th></tr>
   <tbody id="productRows">${view.map((p) => `<tr data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><td><b>${esc(p.name || '(sin nombre)')}</b>${p.dirty ? ' <span class="pill warn">sin subir</span>' : ''}${p.lastError ? ' <span class="pill bad">revisar</span>' : ''}<br/><span class="mut">${esc(p.category)}${p.lastError ? ' · ' + esc(p.lastError) : ''}</span></td>

@@ -3,6 +3,12 @@ import { hashPin, setLocalSession, getLocalSession, getUser, myOrgs } from './li
 import { isCloudConfigured } from './lib/pb';
 import { getOrg, setOrg, toast, esc } from './ui';
 
+// En modo local (sin nube u offline) el equipo es de un solo usuario:
+// se permite administrar lo local. La nube sigue protegida por sus reglas.
+export function isLocalContext(role: string, user: any) {
+  return role === '' || (user as any)?.id === 'local';
+}
+
 // El PIN se configura desde el panel; no se pide en cada inicio.
 export function promptPin(uid: string, email: string, org: string): Promise<boolean> {
   return new Promise((resolve) => {

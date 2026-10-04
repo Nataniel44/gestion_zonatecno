@@ -3,7 +3,7 @@ import { syncOutbox, pullProducts, salesHistoryCloud, createOrg, setLocalSession
 import { isCloudConfigured } from '../lib/pb';
 import { app, esc, toast, fmt, withTimeout, getAccountType, myIdBlock, bindMyIdCopy, setOrg, infoModal } from '../ui';
 import { shell, bindCommon, navigate } from '../chrome';
-import { requireUser, loadOrgs, promptPin } from '../session';
+import { requireUser, loadOrgs, promptPin, isLocalContext } from '../session';
 
 // ---------- Panel bento ----------
 export async function vPanel() {
@@ -46,7 +46,7 @@ export async function vPanel() {
   const org = cur;
   const orgName = list.find((o) => o.id === org)?.name ?? org.slice(0, 8);
   const role = list.find((o) => o.id === org)?.role ?? 'vendedor';
-  const canSeeStats = role === 'dueno' || role === 'admin';
+  const canSeeStats = role === 'dueno' || role === 'admin' || isLocalContext(role, user);
   // Pull nube si hay conexión (no rompe si falla: seguimos con local)
   let syncMsg = '';
   if (navigator.onLine && isCloudConfigured()) {

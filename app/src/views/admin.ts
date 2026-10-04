@@ -3,14 +3,15 @@ import { myOrgs, syncOutbox, pullProducts, listMembers } from '../lib/store';
 import { pbUrl, isLoggedIn, isCloudConfigured } from '../lib/pb';
 import { app, esc, toast, fmt, withTimeout, confirmModal } from '../ui';
 import { shell, bindCommon, navigate } from '../chrome';
-import { requireUser, loadOrgs } from '../session';
+import { requireUser, loadOrgs, isLocalContext } from '../session';
 
 // ---------- Admin (solo dueño) ----------
 export async function vAdmin() {
   const user = await requireUser();
   const { list, cur, cloudError } = await loadOrgs();
   if (!cur) { location.hash = '#/panel'; return; }
-  const owner = list.find((o) => o.id === cur)?.role === 'dueno';
+  const myRole = list.find((o) => o.id === cur)?.role ?? '';
+  const owner = myRole === 'dueno' || isLocalContext(myRole, user);
   if (!owner) {
     app.innerHTML = shell(`<div class="bento"><div class="card span12"><h2>Acceso restringido</h2><p class="mut">El panel de administración solo puede verlo el dueño del negocio.</p><div class="row"><a class="btn small" href="#/panel">Volver al panel</a></div></div></div>`, 'admin', { orgs: list, org: cur, email: (user as any)?.email });
     bindCommon(list, cur);

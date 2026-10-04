@@ -3,7 +3,7 @@ import { listMembers, createOrg, addMemberById, updateMemberRole, removeMember, 
 import { isCloudConfigured } from '../lib/pb';
 import { app, esc, toast, getAccountType, myIdBlock, bindMyIdCopy, confirmActionPassword, confirmModal, getOrg, setOrg } from '../ui';
 import { shell, bindCommon, navigate } from '../chrome';
-import { requireUser, loadOrgs } from '../session';
+import { requireUser, loadOrgs, isLocalContext } from '../session';
 
 // ---------- Equipo ----------
 export async function vEquipo() {
@@ -16,7 +16,7 @@ export async function vEquipo() {
   }
   const currentName = list.find((o) => o.id === cur)?.name ?? (cur ? 'tu negocio' : '');
   const teamRole = list.find((o) => o.id === cur)?.role ?? '';
-  const canManageTeam = teamRole === 'dueno';
+  const canManageTeam = teamRole === 'dueno' || isLocalContext(teamRole, user);
   let teamAuthUntil = 0;
   const ensureTeamAuth = async () => {
     if (!canManageTeam) { toast('Solo el dueño puede administrar el equipo'); return false; }

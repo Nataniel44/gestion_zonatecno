@@ -2,7 +2,7 @@ import { db } from '../lib/localdb';
 import { getCashDay, openCashDay, closeCashDay, salesHistoryCloud } from '../lib/store';
 import { app, esc, toast, fmt, confirmActionPassword } from '../ui';
 import { shell, bindCommon, navigate } from '../chrome';
-import { requireUser, loadOrgs } from '../session';
+import { requireUser, loadOrgs, isLocalContext } from '../session';
 
 // ---------- Caja diaria ----------
 export async function vCaja() {
@@ -11,7 +11,7 @@ export async function vCaja() {
   if (cloudError || !cur) { location.hash = '#/panel'; return; }
   const org = cur;
   const role = list.find((o) => o.id === org)?.role ?? 'vendedor';
-  const canManageCash = role === 'dueno' || role === 'admin';
+  const canManageCash = role === 'dueno' || role === 'admin' || isLocalContext(role, user);
   const day = new Date().toISOString().slice(0, 10);
   const cash = await getCashDay(org, day);
   const pend = await db.outbox.where('org_id').equals(org).toArray();
