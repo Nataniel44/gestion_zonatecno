@@ -219,7 +219,7 @@ export async function vRecibos() {
     box.scrollIntoView({ behavior: 'smooth' });
   });
   document.querySelectorAll('[data-del-rc]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
-    if (!await confirmModal('¿Borrar este recibo de este equipo?', 'Borrar')) return;
+    if (!await confirmModal('¿Borrar este recibo de este equipo?', 'Borrar', 'Borrar recibo')) return;
     await deleteReceipt((b as HTMLButtonElement).dataset.delRc!);
     toast('Recibo borrado'); navigate();
   });

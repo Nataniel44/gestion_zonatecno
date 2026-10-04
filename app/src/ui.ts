@@ -22,11 +22,11 @@ export function toast(msg: string) {
 }
 
 // Reemplazo de confirm()/alert(): funciona en PWA, iOS y Android.
-export function confirmModal(msg: string, okLabel = 'Confirmar'): Promise<boolean> {
+export function confirmModal(msg: string, okLabel = 'Confirmar', title = 'Confirmar'): Promise<boolean> {
   return new Promise((resolve) => {
     const ov = document.createElement('div');
     ov.className = 'ovl';
-    ov.innerHTML = `<div class="card modal-card"><h2>Confirmar</h2><p class="mut">${esc(msg)}</p><div class="row" style="margin-top:.6rem"><button class="btn" id="cfOk">${esc(okLabel)}</button><button class="btn ghost" id="cfCancel">Cancelar</button></div></div>`;
+    ov.innerHTML = `<div class="card modal-card"><h2>${esc(title)}</h2><p class="mut">${esc(msg)}</p><div class="row" style="margin-top:.6rem"><button class="btn" id="cfOk">${esc(okLabel)}</button><button class="btn ghost" id="cfCancel">Cancelar</button></div></div>`;
     document.body.appendChild(ov);
     const done = (v: boolean) => { ov.remove(); resolve(v); };
     (document.getElementById('cfCancel') as HTMLButtonElement).onclick = () => done(false);
@@ -101,14 +101,15 @@ export function statusPills(syncMsg = '') {
 
 export const OUT_ICON = '<svg class="out-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>';
 
-export function confirmActionPassword(email: string): Promise<boolean> {
+export function confirmActionPassword(email: string, action = ''): Promise<boolean> {
   if (!navigator.onLine) return Promise.resolve(true);
   return new Promise((resolve) => {
     const ov = document.createElement('div');
     ov.className = 'ovl';
     ov.innerHTML = `<div class="card modal-card">
       <h2>Confirmá tu identidad</h2>
-      <p class="mut">Esta acción cambia datos del negocio. Escribí tu contraseña para continuar.</p>
+      ${action ? `<p class="mut">Vas a <b>${esc(action)}</b>.</p>` : ''}
+      <p class="mut">Escribí tu contraseña para continuar.</p>
       <div class="field"><label>Contraseña</label><input id="confirmPw" type="password" autocomplete="current-password" placeholder="Tu contraseña" /></div>
       <p id="confirmErr" class="auth-err" style="display:none"></p>
       <div class="row" style="margin-top:.6rem"><button class="btn" id="confirmOk">Continuar</button><button class="btn ghost" id="confirmCancel">Cancelar</button></div>

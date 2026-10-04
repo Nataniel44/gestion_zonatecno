@@ -16,10 +16,10 @@ export async function vProductos(q = '') {
   const canManageProducts = role === 'dueno' || role === 'admin' || isLocalContext(role, user);
   const permLabel = role === '' || (user as any)?.id === 'local' ? 'Local' : role === 'dueno' ? 'Dueño' : role === 'admin' ? 'Administrador' : 'Vendedor';
   let productAuthUntil = 0;
-  const ensureProductAuth = async () => {
+  const ensureProductAuth = async (action = 'modificar un producto') => {
     if (!canManageProducts) { toast('Solo el dueño o un administrador puede modificar productos'); return false; }
     if (Date.now() < productAuthUntil) return true;
-    const ok = await confirmActionPassword((user as any)?.email ?? '');
+    const ok = await confirmActionPassword((user as any)?.email ?? '', action);
     if (ok) productAuthUntil = Date.now() + 5 * 60 * 1000;
     return ok;
   };
@@ -61,7 +61,7 @@ export async function vProductos(q = '') {
   let editing: string | null = null;
   const openEd = (title: string) => { (document.getElementById('editor') as HTMLElement).style.display = 'block'; (document.getElementById('edT') as HTMLElement).textContent = title; };
   (document.getElementById('bNew') as HTMLButtonElement | null)?.addEventListener('click', async () => {
-    if (!await ensureProductAuth()) return;
+    if (!await ensureProductAuth('crear un producto')) return;
     editing = null; openEd('Nuevo producto');
     (document.getElementById('fName') as HTMLInputElement).value = ''; (document.getElementById('fCat') as HTMLInputElement).value = 'general';
     (document.getElementById('fPrice') as HTMLInputElement).value = ''; (document.getElementById('fStock') as HTMLInputElement).value = ''; (document.getElementById('fMin') as HTMLInputElement).value = '3';
@@ -77,7 +77,7 @@ export async function vProductos(q = '') {
     if (code) (document.getElementById('fBarcode') as HTMLInputElement).value = code;
   };
   document.querySelectorAll('[data-edit]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
-    if (!await ensureProductAuth()) return;
+    if (!await ensureProductAuth('editar este producto')) return;
     editing = (b as HTMLButtonElement).dataset.edit!;
     const p = await db.products.get(editing); if (!p) return;
     openEd('Editar');
@@ -89,13 +89,13 @@ export async function vProductos(q = '') {
     (document.getElementById('fBarcode') as HTMLInputElement).value = p.barcode ?? '';
   });
   document.querySelectorAll('[data-del]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
-    if (!await ensureProductAuth()) return;
-    if (!await confirmModal('¿Borrar de este equipo? En la nube se desactiva al sincronizar.', 'Borrar')) return;
+    if (!await ensureProductAuth('borrar este producto')) return;
+    if (!await confirmModal('¿Borrar de este equipo? En la nube se desactiva al sincronizar.', 'Borrar', 'Borrar producto')) return;
     await deleteProductLocal((b as HTMLButtonElement).dataset.del!);
     toast('Borrado local'); navigate();
   });
   (document.getElementById('bSave') as HTMLButtonElement).onclick = async () => {
-    if (!await ensureProductAuth()) return;
+    if (!await ensureProductAuth(editing ? 'guardar los cambios del producto' : 'crear este producto')) return;
     const name = (document.getElementById('fName') as HTMLInputElement).value.trim();
     if (!name) { toast('Poné un nombre'); return; }
     const base = editing ? await db.products.get(editing) : newLocalProduct(org);

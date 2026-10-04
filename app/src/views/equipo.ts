@@ -18,10 +18,10 @@ export async function vEquipo() {
   const teamRole = list.find((o) => o.id === cur)?.role ?? '';
   const canManageTeam = teamRole === 'dueno' || isLocalContext(teamRole, user);
   let teamAuthUntil = 0;
-  const ensureTeamAuth = async () => {
+  const ensureTeamAuth = async (action = 'administrar el equipo') => {
     if (!canManageTeam) { toast('Solo el dueño puede administrar el equipo'); return false; }
     if (Date.now() < teamAuthUntil) return true;
-    const ok = await confirmActionPassword((user as any)?.email ?? '');
+    const ok = await confirmActionPassword((user as any)?.email ?? '', action);
     if (ok) teamAuthUntil = Date.now() + 5 * 60 * 1000;
     return ok;
   };
@@ -97,7 +97,7 @@ export async function vEquipo() {
   const bA = document.getElementById('bAdd') as HTMLButtonElement | null;
   if (bA) bA.onclick = async () => {
     if (!cur) { toast('Primero creá un negocio'); return; }
-    if (!await ensureTeamAuth()) return;
+    if (!await ensureTeamAuth('agregar a esta persona al equipo')) return;
     const memberId = (document.getElementById('mId') as HTMLInputElement).value.trim();
     if (memberId.length < 8) { toast('Revisá el ID del usuario'); return; }
     bA.disabled = true;
@@ -118,15 +118,15 @@ export async function vEquipo() {
   };
   document.querySelectorAll('[data-mrole]').forEach((el) => (el as HTMLSelectElement).onchange = async (e) => {
     const sel = e.target as HTMLSelectElement;
-    if (!cur || !await ensureTeamAuth()) { navigate(); return; }
+    if (!cur || !await ensureTeamAuth('cambiar el permiso de esta persona')) { navigate(); return; }
     sel.disabled = true;
     try { await updateMemberRole(cur, sel.dataset.mrole!, sel.value); toast('Permiso actualizado'); navigate(); }
     catch (err: any) { toast(err?.message ?? 'No pude actualizar el permiso'); sel.disabled = false; }
   });
   document.querySelectorAll('[data-mrm]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
     const btn = b as HTMLButtonElement;
-    if (!cur || !await ensureTeamAuth()) return;
-    if (!await confirmModal('¿Quitar a esta persona del negocio? Ya no verá el stock ni podrá vender.', 'Quitar')) return;
+    if (!cur || !await ensureTeamAuth('quitar a esta persona del equipo')) return;
+    if (!await confirmModal('¿Quitar a esta persona del negocio? Ya no verá el stock ni podrá vender.', 'Quitar', 'Quitar del equipo')) return;
     btn.disabled = true;
     try { await removeMember(cur, btn.dataset.mrm!); toast('Persona quitada del equipo'); navigate(); }
     catch (err: any) { toast(err?.message ?? 'No pude quitar a la persona'); btn.disabled = false; }

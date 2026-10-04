@@ -47,7 +47,7 @@ export function shell(inner: string, tab = '', opts: { orgs?: { id: string; name
 }
 
 export async function doSignOut() {
-  if (!await confirmModal('¿Cerrar sesión en este equipo? Las ventas pendientes quedan guardadas y se suben al volver a entrar.', 'Cerrar sesión')) return;
+  if (!await confirmModal('¿Cerrar sesión en este equipo? Las ventas pendientes quedan guardadas y se suben al volver a entrar.', 'Cerrar sesión', 'Cerrar sesión')) return;
   try { await signOut(); } catch { /* seguimos con limpieza local igual */ }
   setLocalSession(null); // se cierra la caja, pero el PIN queda para reabrir offline
   localStorage.removeItem('zt_org');

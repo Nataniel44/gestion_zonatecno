@@ -78,7 +78,7 @@ export async function vAdmin() {
     try { await navigator.clipboard.writeText(report); toast('Informe copiado'); } catch { window.alert(report); }
   };
   (document.getElementById('bResetLocal') as HTMLButtonElement).onclick = async () => {
-    if (!await confirmModal('Esto borra productos, ventas pendientes y PINs de este dispositivo. ¿Continuar?', 'Borrar todo')) return;
+    if (!await confirmModal('Esto borra productos, ventas pendientes y PINs de este dispositivo. ¿Continuar?', 'Borrar todo', 'Borrar datos locales')) return;
     await db.delete();
     toast('Datos locales borrados');
     location.reload();

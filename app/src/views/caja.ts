@@ -27,12 +27,12 @@ export async function vCaja() {
   </div>`, 'caja', { orgs: list, org, email: (user as any)?.email });
   bindCommon(list, org);
   (document.getElementById('bOpenCash') as HTMLButtonElement | null)?.addEventListener('click', async () => {
-    if (!canManageCash || !await confirmActionPassword((user as any)?.email ?? '')) return;
+    if (!canManageCash || !await confirmActionPassword((user as any)?.email ?? '', 'abrir la caja de hoy')) return;
     const amount = Number((document.getElementById('openAmount') as HTMLInputElement).value || 0);
     await openCashDay(org, amount); toast('Caja abierta'); navigate();
   });
   (document.getElementById('bCloseCash') as HTMLButtonElement | null)?.addEventListener('click', async () => {
-    if (!canManageCash || !await confirmActionPassword((user as any)?.email ?? '')) return;
+    if (!canManageCash || !await confirmActionPassword((user as any)?.email ?? '', 'cerrar la caja de hoy')) return;
     const amount = Number((document.getElementById('closeAmount') as HTMLInputElement).value || 0);
     const note = (document.getElementById('cashNote') as HTMLInputElement).value.trim();
     await closeCashDay(org, cash!.id, amount, expected, note); toast('Caja cerrada'); navigate();
