@@ -1,0 +1,171 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const PB_URL = 'https://app.zonatecno.uno';
+---
+<Layout title="Admin gangas — ZonaTecno" description="Panel privado para publicar gangas.">
+  <!-- noindex: no linkear /admin en ningún lado -->
+  <section class="shop-hero">
+    <div id="lock" style="position:fixed;inset:0;z-index:99;background:#050c14;display:flex;align-items:center;justify-content:center;padding:1rem">
+      <div class="card" style="padding:1.2rem;max-width:22rem;width:100%;text-align:center">
+        <h2 style="margin:0 0 .4rem">🔒 Admin</h2>
+        <p style="color:var(--muted);font-size:.85rem">Zona privada. Ingresá la clave.</p>
+        <input id="adminPass" type="password" placeholder="Contraseña" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff;margin:.6rem 0" />
+        <button class="btn btn-primary btn-block" id="unlockBtn">Entrar</button>
+        <div id="lockMsg" style="font-size:.82rem;margin-top:.4rem;color:var(--muted)"></div>
+      </div>
+    </div>
+    <div class="container" style="max-width:44rem">
+      <div class="crumbs"><a href="/">Inicio</a> / <b>Admin</b></div>
+      <h1>Publicar ganga 📱</h1>
+      <p style="color:var(--muted)">Sale <b style="color:#fff">al instante</b> en PocketBase. Sin esperar rebuild.</p>
+
+      <div class="card" style="padding:1rem;margin-top:1rem">
+        <h3 style="margin:0 0 .6rem">1. Tu cuenta (la misma de gestión)</h3>
+        <div style="display:grid;gap:.5rem">
+          <input id="pbEmail" type="email" placeholder="tu@email.com" autocomplete="username" style="padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" />
+          <input id="pbPass" type="password" placeholder="tu contraseña de gestión" autocomplete="current-password" style="padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" />
+          <button class="btn btn-ghost btn-sm" id="pbLogin">Entrar</button>
+        </div>
+        <div id="pbMsg" style="font-size:.82rem;margin-top:.4rem"></div>
+      </div>
+
+      <form class="card" id="gangaForm" style="padding:1rem;margin-top:1rem;display:grid;gap:.7rem">
+        <h3 style="margin:0">2. La ganga de hoy</h3>
+        <label>Título* <input name="titulo" required placeholder="iPhone 13 · 128GB · Azul" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+          <label style="flex:1">Precio* <input name="precio" type="number" required placeholder="620000" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
+          <label style="flex:1">Precio ref <input name="precioRef" type="number" placeholder="750000" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
+        </div>
+        <label>Condición* <input name="condicion" required placeholder="Usado · Batería 89% · iCloud libre" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
+        <label>Detalle <textarea name="detalle" rows="3" placeholder="Dónde lo viste, qué verificás, seña 30%, entrega..." style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff"></textarea></label>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+          <label style="flex:1">Fuente <input name="fuente" placeholder="Grupo compraventa San Vicente" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
+          <label style="flex:1">Link original <input name="fuenteUrl" placeholder="https://..." style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
+        </div>
+        <button class="btn btn-primary" type="submit" id="pubBtn">Publicar ganga →</button>
+        <div id="formMsg" style="font-size:.88rem"></div>
+        <div id="linkBox" style="display:none;background:#0e2a1c;border:1px solid #1c5c38;border-radius:10px;padding:.7rem;font-size:.88rem"></div>
+      </form>
+
+      <div class="card" style="padding:1rem;margin-top:1rem">
+        <h3 style="margin:0 0 .6rem">3. Marcar vendida / reservada</h3>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <input id="slugEstado" placeholder="slug-de-la-ganga" style="flex:1;min-width:180px;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" />
+          <select id="nuevoEstado" style="padding:.6rem;border-radius:8px;background:#0a141f;color:#fff;border:1px solid var(--line)">
+            <option value="reservada">reservada</option>
+            <option value="vendida">vendida</option>
+            <option value="disponible">disponible</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" id="cambiarEstado">Actualizar</button>
+        </div>
+        <div id="estadoMsg" style="font-size:.84rem;margin-top:.4rem"></div>
+      </div>
+    </div>
+  </section>
+
+  <script define:vars={{ PB_URL }}>
+    // Candado local (Eladmin123 hasheada) + auth real de PocketBase
+    const ADMIN_HASH = '8d5ba70d33f3a1c7be66b9172b80a9d6a8416abd3b4f5e6ce0824e936413999d';
+    const lock = document.getElementById('lock');
+    const passInput = document.getElementById('adminPass');
+    const lockMsg = document.getElementById('lockMsg');
+    if (sessionStorage.getItem('zt_admin_ok') === '1') lock.style.display = 'none';
+    async function sha(s) {
+      const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+      return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+    }
+    async function unlock() {
+      if (await sha(passInput.value) === ADMIN_HASH) { sessionStorage.setItem('zt_admin_ok', '1'); lock.style.display = 'none'; }
+      else lockMsg.textContent = '❌ Clave incorrecta.';
+    }
+    document.getElementById('unlockBtn').onclick = unlock;
+    passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') unlock(); });
+
+    const slugify = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+    let pbToken = sessionStorage.getItem('zt_pb_token') || '';
+    const pbMsg = document.getElementById('pbMsg');
+    if (pbToken) pbMsg.textContent = '✓ Sesión de gestión activa.';
+
+    document.getElementById('pbLogin').onclick = async () => {
+      const identity = document.getElementById('pbEmail').value.trim();
+      const password = document.getElementById('pbPass').value;
+      pbMsg.textContent = '⏳ Verificando...';
+      try {
+        const r = await fetch(`${PB_URL}/api/collections/users/auth-with-password`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identity, password }),
+        });
+        if (!r.ok) throw new Error('Email o contraseña incorrectos.');
+        const d = await r.json();
+        pbToken = d.token;
+        sessionStorage.setItem('zt_pb_token', pbToken);
+        document.getElementById('pbPass').value = '';
+        pbMsg.textContent = '✓ Conectado como ' + (d.record?.email || identity);
+      } catch (err) { pbMsg.textContent = '❌ ' + err.message; }
+    };
+
+    document.getElementById('gangaForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById('formMsg');
+      const linkBox = document.getElementById('linkBox');
+      if (!pbToken) { msg.textContent = '⚠️ Entrá con tu cuenta de gestión primero (paso 1).'; return; }
+      const fd = new FormData(e.target);
+      const titulo = String(fd.get('titulo') || '').trim();
+      const precio = Number(fd.get('precio'));
+      if (!titulo || !precio) { msg.textContent = '⚠️ Faltan título y precio.'; return; }
+      const slug = slugify(titulo) + '-' + Math.random().toString(36).slice(2, 6);
+      msg.textContent = '⏳ Publicando...';
+      try {
+        const entry = {
+          slug,
+          titulo,
+          precio,
+          precioRef: Number(fd.get('precioRef')) || 0,
+          condicion: String(fd.get('condicion') || '').trim(),
+          detalle: String(fd.get('detalle') || '').trim() || 'Intermediación verificada. Seña 30%, lo buscamos y entregamos en San Vicente.',
+          fuente: String(fd.get('fuente') || '').trim() || 'Compraventa',
+          fuenteUrl: String(fd.get('fuenteUrl') || '').trim(),
+          estado: 'disponible',
+          fecha: new Date().toISOString().slice(0, 10),
+        };
+        const r = await fetch(`${PB_URL}/api/collections/gangas/records`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: pbToken },
+          body: JSON.stringify(entry),
+        });
+        if (r.status === 401) { sessionStorage.removeItem('zt_pb_token'); pbToken = ''; throw new Error('Sesión vencida, volvé a entrar en el paso 1.'); }
+        if (!r.ok) throw new Error('PocketBase rechazó la ganga (' + r.status + '). ¿Corriste el setup para crear la colección?');
+        const url = `https://zonatecno.uno/gangas/ver/?slug=${slug}`;
+        msg.textContent = '✓ Publicada al instante.';
+        linkBox.style.display = 'block';
+        linkBox.innerHTML = `Copiá para IG:<br/><code>${url}&src=ig_post</code><br/><br/><a href="${url}" target="_blank" rel="noopener">Ver página →</a>`;
+        e.target.reset();
+      } catch (err) { msg.textContent = '❌ ' + err.message; }
+    };
+
+    document.getElementById('cambiarEstado').onclick = async () => {
+      const m = document.getElementById('estadoMsg');
+      const slug = document.getElementById('slugEstado').value.trim();
+      const estado = document.getElementById('nuevoEstado').value;
+      if (!pbToken) { m.textContent = '⚠️ Entrá en el paso 1 primero.'; return; }
+      if (!slug) { m.textContent = '⚠️ Falta el slug.'; return; }
+      m.textContent = '⏳ Actualizando...';
+      try {
+        const q = await fetch(`${PB_URL}/api/collections/gangas/records?filter=${encodeURIComponent(`slug="${slug}"`)}&perPage=1`, {
+          headers: { Authorization: pbToken },
+        });
+        const d = await q.json();
+        if (!d.items?.length) throw new Error('No existe ese slug.');
+        const id = d.items[0].id;
+        const r = await fetch(`${PB_URL}/api/collections/gangas/records/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: pbToken },
+          body: JSON.stringify({ estado }),
+        });
+        if (!r.ok) throw new Error('No se pudo actualizar (' + r.status + ').');
+        m.textContent = '✓ Actualizada a ' + estado + ' al instante.';
+      } catch (err) { m.textContent = '❌ ' + err.message; }
+    };
+  </script>
+</Layout>

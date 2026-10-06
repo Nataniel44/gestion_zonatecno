@@ -1,0 +1,59 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { GANGAS, fmtG } from '../../data/gangas';
+---
+<Layout
+  title="Gangas iPhone en San Vicente — ZonaTecno.uno"
+  description="Gangas de iPhone que encontramos cada día. Las verificamos, las buscamos y te las entregamos. Consultá por WhatsApp antes de que se vendan."
+>
+  <section class="shop-hero">
+    <div class="container">
+      <div class="crumbs"><a href="/">Inicio</a> / <b>Gangas</b></div>
+      <h1>Gangas del día — iPhone</h1>
+      <p>
+        Publicamos 1 por día en Instagram. <b style="color:#fff">No es stock nuestro:</b> es
+        intermediación verificada. La buscamos, la revisamos y te la entregamos con comisión.
+      </p>
+      <div class="shop-grid" style="margin-top:1.4rem" id="liveGrid">
+        {GANGAS.map((g) => (
+          <article class="card p-card">
+            <div class="p-visual" style="background:linear-gradient(160deg,#123a2a,#070e16);min-height:120px;display:flex;align-items:center;justify-content:center;font-size:3rem">📱</div>
+            <div class="p-cat">{g.fecha} · {g.estado}</div>
+            <h3>{g.titulo}</h3>
+            <div class="p-price">{fmtG(g.precio)}{g.precioRef && <s>{fmtG(g.precioRef)}</s>}</div>
+            <div class="p-cuotas">{g.condicion}</div>
+            <a class="btn btn-primary btn-sm btn-block" style="margin-top:.6rem" href={`/gangas/${g.slug}/`}>
+              Ver ganga →
+            </a>
+          </article>
+        ))}
+      </div>
+      <script define:vars={{ PB: 'https://app.zonatecno.uno' }}>
+        // Suma al instante las publicadas desde /admin (PocketBase), sin esperar rebuild
+        (async () => {
+          try {
+            const r = await fetch(`${PB}/api/collections/gangas/records?sort=-created&perPage=20&filter=${encodeURIComponent('estado="disponible"')}`);
+            const d = await r.json();
+            const live = (d.items || []).filter((g) => !document.querySelector(`[href="/gangas/${g.slug}/"]`));
+            if (!live.length) return;
+            const grid = document.getElementById('liveGrid');
+            const fmt = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+            grid.insertAdjacentHTML('afterbegin', live.map((g) => `
+              <article class="card p-card" style="border-color:#1c5c38">
+                <div class="p-visual" style="background:linear-gradient(160deg,#123a2a,#070e16);min-height:120px;display:flex;align-items:center;justify-content:center;font-size:3rem">📱</div>
+                <div class="p-cat">${g.fecha || ''} · ${g.estado || ''} · <b style="color:#0ec254">NUEVA</b></div>
+                <h3>${g.titulo}</h3>
+                <div class="p-price">${fmt(g.precio)}${g.precioRef ? `<s>${fmt(g.precioRef)}</s>` : ''}</div>
+                <div class="p-cuotas">${g.condicion || ''}</div>
+                <a class="btn btn-primary btn-sm btn-block" style="margin-top:.6rem" href="/gangas/ver/?slug=${g.slug}">Ver ganga →</a>
+              </article>`).join(''));
+          } catch {}
+        })();
+      </script>
+      <p style="color:var(--muted);font-size:.84rem;margin-top:1rem">
+        Cómo funciona: 1) La ves en IG → 2) Entrás al link exacto → 3) Consultás por WhatsApp →
+        4) La señás, la buscamos y te la entregamos.
+      </p>
+    </div>
+  </section>
+</Layout>

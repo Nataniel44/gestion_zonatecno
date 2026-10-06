@@ -32,6 +32,15 @@ const R = {
   cash_days: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ADMIN, deleteRule: ADMIN },
   business_profiles: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
   receipts: { listRule: ORG, viewRule: ORG, createRule: ORG, updateRule: ORG, deleteRule: ADMIN },
+  // Gangas públicas: lectura abierta (la web las muestra sin login),
+  // escritura solo con usuario logueado (vos desde /admin).
+  gangas: {
+    listRule: '',
+    viewRule: '',
+    createRule: '@request.auth.id != ""',
+    updateRule: '@request.auth.id != ""',
+    deleteRule: '@request.auth.id != ""',
+  },
 };
 // Índices únicos: impiden duplicados cuando se reintenta una subida offline.
 // Se aplican como "no fatal": si hay duplicados viejos, el script avisa y sigue.
@@ -51,6 +60,7 @@ const IDX = {
     'CREATE UNIQUE INDEX idx_receipts_org_number ON receipts (org, number)',
     'CREATE UNIQUE INDEX idx_receipts_org_local ON receipts (org, local_id)',
   ],
+  gangas: ['CREATE UNIQUE INDEX idx_gangas_slug ON gangas (slug)'],
 };
 const T = (name, required = false) => ({ name, type: 'text', required });
 const N = (name) => ({ name, type: 'number' });const B = (name) => ({ name, type: 'bool' });
@@ -86,6 +96,7 @@ function* defs(ids) {
   yield { name: 'cash_days', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1, cascadeDelete: true }), T('day'), N('open_amount'), T('opened_at'), T('closed_at'), N('close_amount'), N('expected_cash'), N('difference'), T('note'), T('local_id')] };
   yield { name: 'business_profiles', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1, cascadeDelete: true }), T('name'), T('address'), T('phone'), T('cuit'), T('footer'), T('prefix'), N('next_number'), T('warranty_text')] };
   yield { name: 'receipts', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1, cascadeDelete: true }), T('number'), N('seq'), T('title'), T('issued_at'), T('client_name'), T('client_phone'), T('client_doc'), T('device'), T('device_detail'), T('problem'), J('items'), T('items_json'), N('discount'), N('subtotal'), N('total'), T('pay_method'), N('received'), N('change'), T('status'), T('notes'), T('warranty_text'), T('seller'), T('biz_name'), T('biz_address'), T('biz_phone'), T('biz_cuit'), T('biz_footer'), T('local_id')] };
+  yield { name: 'gangas', type: 'base', fields: [T('slug', true), T('titulo', true), N('precio'), N('precioRef'), T('condicion'), T('detalle'), T('fuente'), T('fuenteUrl'), S('estado', ['disponible', 'reservada', 'vendida']), T('fecha')] };
 }
 
 try {

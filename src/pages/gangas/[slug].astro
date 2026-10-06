@@ -1,0 +1,62 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { GANGAS, fmtG, WA_NUMBER } from '../../data/gangas';
+
+export function getStaticPaths() {
+  return GANGAS.map((g) => ({ params: { slug: g.slug }, props: { g } }));
+}
+
+const { g } = Astro.props;
+const pageUrl = `https://zonatecno.uno/gangas/${g.slug}/`;
+const waBase = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(`Hola ZonaTecno, me interesa esta ganga: ${g.titulo} (${pageUrl}) — ¿sigue disponible?`)}`;
+---
+<Layout
+  title={`${g.titulo} — Ganga ZonaTecno.uno`}
+  description={`${g.titulo} por ${fmtG(g.precio)}. ${g.condicion}. Intermediación verificada en San Vicente, consultá por WhatsApp.`}
+>
+  <section class="shop-hero">
+    <div class="container" style="max-width:42rem">
+      <div class="crumbs"><a href="/">Inicio</a> / <a href="/gangas/">Gangas</a> / <b>{g.titulo}</b></div>
+      <div id="srcBanner" style="display:none;background:#0e2a1c;border:1px solid #1c5c38;border-radius:10px;padding:.6rem .9rem;margin:.8rem 0;font-size:.88rem"></div>
+
+      <div class="card" style="padding:1.2rem">
+        <div style="font-size:4rem;text-align:center">📱</div>
+        <div class="p-cat">{g.fecha} · Fuente: {g.fuente} · {g.estado}</div>
+        <h1 style="margin:.4rem 0">{g.titulo}</h1>
+        <div class="p-price" style="font-size:1.6rem">{fmtG(g.precio)}{g.precioRef && <s style="font-size:1rem">{fmtG(g.precioRef)}</s>}</div>
+        <div class="p-cuotas">{g.condicion}</div>
+        <p style="color:var(--muted);margin-top:.8rem">{g.detalle}</p>
+        {g.fuenteUrl && <p style="font-size:.84rem"><a href={g.fuenteUrl} target="_blank" rel="noopener nofollow">Ver publicación original →</a></p>}
+        <p style="font-size:.82rem;color:var(--muted);background:#0a141f;border:1px solid var(--line);border-radius:8px;padding:.6rem">
+          ⚠️ Foto ilustrativa, no republicamos la foto del vendedor sin permiso.
+          Servicio de intermediación: verificamos iCloud, Face ID y batería. Seña del 30%, comisión incluida, entrega en San Vicente.
+        </p>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.8rem">
+          <a id="waBtn" class="btn btn-primary" style="flex:1;text-align:center" target="_blank" rel="noopener" href={waBase}>Consultar por WhatsApp</a>
+          <a class="btn btn-ghost" href="/gangas/">← Todas las gangas</a>
+        </div>
+        <p style="font-size:.76rem;color:var(--muted);margin-top:.6rem">Link exacto de esta ganga para compartir: <code>{pageUrl}</code></p>
+      </div>
+    </div>
+  </section>
+
+  <script define:vars={{ waBase, pageUrl }}>
+    // Captura ?src= / ?utm_source= y lo mete en el mensaje de WhatsApp
+    const params = new URLSearchParams(location.search);
+    const src = params.get('src') || params.get('utm_source') || params.get('fbclid') && 'facebook' || '';
+    if (src) {
+      try { localStorage.setItem('zt_src', src); } catch {}
+    }
+    const saved = (() => { try { return localStorage.getItem('zt_src') || src || 'directo'; } catch { return src || 'directo'; } })();
+    // Persiste src en la URL para compartir
+    const banner = document.getElementById('srcBanner');
+    if (saved && saved !== 'directo') {
+      banner.style.display = 'block';
+      banner.textContent = `Llegaste desde: ${saved} · Esta ganga se consulta solo por WhatsApp.`;
+    }
+    const btn = document.getElementById('waBtn');
+    const msg = `Hola ZonaTecno, me interesa esta ganga: ${document.querySelector('h1')?.textContent} (${pageUrl}?src=${encodeURIComponent(saved)}) — Vine desde ${saved}, ¿sigue disponible?`;
+    // Reconstruye con WA hardcodeado en cliente para no depender del server
+    btn.href = `https://wa.me/5493755538503?text=${encodeURIComponent(msg)}`;
+  </script>
+</Layout>

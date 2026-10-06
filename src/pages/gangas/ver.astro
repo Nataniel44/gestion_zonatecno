@@ -1,0 +1,63 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+const PB_URL = 'https://app.zonatecno.uno';
+---
+<Layout title="Ganga — ZonaTecno.uno" description="Ganga de iPhone verificada en San Vicente. Consultá por WhatsApp antes de que se venda.">
+  <section class="shop-hero">
+    <div class="container" style="max-width:42rem">
+      <div class="crumbs"><a href="/">Inicio</a> / <a href="/gangas/">Gangas</a> / <b id="crumbTitle">Cargando…</b></div>
+      <div id="srcBanner" style="display:none;background:#0e2a1c;border:1px solid #1c5c38;border-radius:10px;padding:.6rem .9rem;margin:.8rem 0;font-size:.88rem"></div>
+      <div class="card" style="padding:1.2rem" id="gangaCard">
+        <p style="color:var(--muted)">⏳ Cargando la ganga…</p>
+      </div>
+    </div>
+  </section>
+
+  <script define:vars={{ PB_URL }}>
+    const WA = '5493755538503';
+    const fmt = (n) => '$' + Number(n || 0).toLocaleString('es-AR');
+    const params = new URLSearchParams(location.search);
+    const slug = params.get('slug') || '';
+    const src = params.get('src') || params.get('utm_source') || '';
+    if (src) { try { localStorage.setItem('zt_src', src); } catch {} }
+    const saved = (() => { try { return localStorage.getItem('zt_src') || src || 'directo'; } catch { return src || 'directo'; } })();
+    if (saved !== 'directo') {
+      const b = document.getElementById('srcBanner');
+      b.style.display = 'block';
+      b.textContent = `Llegaste desde: ${saved} · Esta ganga se consulta solo por WhatsApp.`;
+    }
+    const card = document.getElementById('gangaCard');
+    (async () => {
+      if (!slug) { card.innerHTML = '<p>⚠️ Falta el slug. <a href="/gangas/">Ver todas las gangas →</a></p>'; return; }
+      try {
+        const r = await fetch(`${PB_URL}/api/collections/gangas/records?filter=${encodeURIComponent(`slug="${slug}"`)}&perPage=1`);
+        const d = await r.json();
+        const g = d.items?.[0];
+        if (!g) { card.innerHTML = `<p>⚠️ Esta ganga ya no existe o el link está mal. <a href="/gangas/">Ver las vigentes →</a></p>`; return; }
+        document.title = `${g.titulo} — Ganga ZonaTecno.uno`;
+        document.getElementById('crumbTitle').textContent = g.titulo;
+        const pageUrl = `https://zonatecno.uno/gangas/ver/?slug=${g.slug}`;
+        const msg = `Hola ZonaTecno, me interesa esta ganga: ${g.titulo} (${pageUrl}?src=${encodeURIComponent(saved)}) — Vine desde ${saved}, ¿sigue disponible?`;
+        card.innerHTML = `
+          <div style="font-size:4rem;text-align:center">📱</div>
+          <div class="p-cat">${g.fecha || ''} · Fuente: ${g.fuente || 'Compraventa'} · ${g.estado || ''}</div>
+          <h1 style="margin:.4rem 0">${g.titulo}</h1>
+          <div class="p-price" style="font-size:1.6rem">${fmt(g.precio)}${g.precioRef ? `<s style="font-size:1rem">${fmt(g.precioRef)}</s>` : ''}</div>
+          <div class="p-cuotas">${g.condicion || ''}</div>
+          <p style="color:var(--muted);margin-top:.8rem">${g.detalle || ''}</p>
+          ${g.fuenteUrl ? `<p style="font-size:.84rem"><a href="${g.fuenteUrl}" target="_blank" rel="noopener nofollow">Ver publicación original →</a></p>` : ''}
+          <p style="font-size:.82rem;color:var(--muted);background:#0a141f;border:1px solid var(--line);border-radius:8px;padding:.6rem">
+            ⚠️ Foto ilustrativa, no republicamos la foto del vendedor sin permiso.
+            Intermediación verificada: iCloud, Face ID y batería. Seña del 30%, entrega en San Vicente.
+          </p>
+          <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.8rem">
+            <a class="btn btn-primary" style="flex:1;text-align:center" target="_blank" rel="noopener" href="https://wa.me/${WA}?text=${encodeURIComponent(msg)}">Consultar por WhatsApp</a>
+            <a class="btn btn-ghost" href="/gangas/">← Todas las gangas</a>
+          </div>`;
+      } catch {
+        card.innerHTML = '<p>❌ Sin conexión con el servidor. Probá de nuevo en un rato.</p>';
+      }
+    })();
+  </script>
+</Layout>
