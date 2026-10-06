@@ -33,15 +33,15 @@ export function shell(inner: string, tab = '', opts: { orgs?: { id: string; name
         <div class="row">${statusPills(opts.syncMsg)}<button class="btn ghost small topbar-out" id="btnOutTop" data-logout title="Cerrar sesión">${OUT_ICON} Salir</button></div>
       </div>
       ${inner}
-      <nav class="mobnav">
-        <a href="#/panel" class="${tab === 'panel' ? 'on' : ''}">Panel</a>
-        <a href="#/ventas" class="${tab === 'ventas' ? 'on' : ''}">Vender</a>
-        <a href="#/productos" class="${tab === 'productos' ? 'on' : ''}">Stock</a>
-        <a href="#/caja" class="${tab === 'caja' ? 'on' : ''}">Caja</a>
-        <a href="#/tickets" class="${tab === 'tickets' ? 'on' : ''}">Tickets</a>
-        <a href="#/recibos" class="${tab === 'recibos' ? 'on' : ''}">Recibos</a>
-        <a href="#/equipo" class="${tab === 'equipo' ? 'on' : ''}">Equipo</a>
-        ${isOwner ? `<a href="#/admin" class="${tab === 'admin' ? 'on' : ''}">Admin</a>` : ''}
+      <nav class="mobnav" aria-label="Navegación principal">
+        <a href="#/panel" class="${tab === 'panel' ? 'on' : ''}"><i>◧</i>Panel</a>
+        <a href="#/ventas" class="${tab === 'ventas' ? 'on' : ''}"><i>◉</i>Vender</a>
+        <a href="#/productos" class="${tab === 'productos' ? 'on' : ''}"><i>▤</i>Stock</a>
+        <a href="#/caja" class="${tab === 'caja' ? 'on' : ''}"><i>💵</i>Caja</a>
+        <a href="#/tickets" class="${tab === 'tickets' ? 'on' : ''}"><i>🧾</i>Tickets</a>
+        <a href="#/recibos" class="${tab === 'recibos' ? 'on' : ''}"><i>🧷</i>Recibos</a>
+        <a href="#/equipo" class="${tab === 'equipo' ? 'on' : ''}"><i>⛁</i>Equipo</a>
+        ${isOwner ? `<a href="#/admin" class="${tab === 'admin' ? 'on' : ''}"><i>⚙</i>Admin</a>` : ''}
       </nav>
     </div></div>`;
 }
