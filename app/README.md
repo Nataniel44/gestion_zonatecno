@@ -38,6 +38,23 @@ Abrí `http://localhost:5174`.
 3. El empleado crea su cuenta y el dueño lo agrega usando su ID de PocketBase.
 4. Cargan stock, venden y revisan las ventas pendientes desde el panel.
 
+## Cobro por peso (balanza)
+
+La app soporta productos que se venden por kg (fiambres, carnes, granel):
+
+1. El dueño entra a **Ajustes** y activa **Cobro por peso**.
+2. Elige la unidad que envía la balanza (kg o g), los decimales y la tecla final
+   (Enter o Tab). El botón **Probar balanza** sirve para verificar la conexión.
+3. En **Stock**, al editar un producto, marca **Se vende por peso**. El precio
+   pasa a ser por kg y el stock se mide en kg.
+4. En **Vender**, el botón cambia a **Pesar**. La balanza escribe el peso en el
+   campo enfocado y el vendedor confirma. También se puede cargar a mano.
+
+Funciona con balanzas que se conectan como teclado (USB/RS232 con adaptador) y
+escriben el peso terminando en Enter o Tab. La configuración se guarda en cada
+dispositivo. Si usás PocketBase, volvé a correr `npm run setup:pocketbase` para
+agregar el campo `sold_by_weight` a la colección `products`.
+
 ## Offline
 
 - Productos y ventas se guardan en IndexedDB mediante Dexie.

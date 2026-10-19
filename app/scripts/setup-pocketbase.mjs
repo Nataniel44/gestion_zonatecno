@@ -87,7 +87,7 @@ function* defs(ids) {
   // resolver el ID de cada colección antes de crear la siguiente.
   yield { name: 'orgs', type: 'base', fields: [T('name', true), T('slug'), Rel('owner', ids.users, false, { maxSelect: 1 }), Rel('members', ids.users), Rel('admins', ids.users), T('plan'), B('active')] };
   yield { name: 'memberships', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1, cascadeDelete: true }), Rel('user', ids.users, true, { maxSelect: 1 }), S('role', ['dueno', 'admin', 'vendedor']), T('label_name'), T('label_email')] };
-  yield { name: 'products', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), T('name', true), N('price'), N('stock'), N('min_stock'), T('category'), T('barcode'), B('active'), T('local_id')] };
+  yield { name: 'products', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), T('name', true), N('price'), N('stock'), N('min_stock'), T('category'), T('barcode'), B('active'), B('sold_by_weight'), T('local_id')] };
   yield { name: 'clients', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), T('name', true), T('phone'), T('note')] };
   yield { name: 'sales', type: 'base', fields: [Rel('org', ids.orgs, true, { maxSelect: 1 }), N('total'), T('pay_method'), T('channel'), T('created_by'), T('local_id'), T('occurred_at')] };
   yield { name: 'sale_items', type: 'base', fields: [Rel('sale', ids.sales, true, { maxSelect: 1, cascadeDelete: true }), Rel('product', ids.products, false, { maxSelect: 1 }), T('name'), N('qty'), N('price'), T('local_id')] };

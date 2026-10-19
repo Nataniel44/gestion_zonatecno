@@ -1,9 +1,16 @@
 import { db } from '../lib/localdb';
-import { syncOutbox, pullProducts, salesHistoryCloud, createOrg, setLocalSession, getLocalSession } from '../lib/store';
+import { syncOutbox, pullProducts, salesHistoryCloud, createOrg, setLocalSession, getLocalSession, listMembers } from '../lib/store';
 import { isCloudConfigured } from '../lib/pb';
-import { app, esc, toast, fmt, withTimeout, getAccountType, myIdBlock, bindMyIdCopy, setOrg, infoModal } from '../ui';
+import { app, esc, toast, fmt, withTimeout, getAccountType, myIdBlock, bindMyIdCopy, setOrg, infoModal, promptModal } from '../ui';
 import { shell, bindCommon, navigate } from '../chrome';
 import { requireUser, loadOrgs, isLocalContext } from '../session';
+import { isInstalled } from '../pwa';
+import { getScaleSettings, formatKg } from '../lib/scale';
+import {
+  getDailyGoal, setDailyGoal, wasGoalCelebratedToday, markGoalCelebratedToday,
+  confetti, isOnboardingHidden, hideOnboarding, wasOnboardingCompleted, markOnboardingCompleted,
+  shareText,
+} from '../lib/engagement';
 
 // ---------- Panel bento ----------
 export async function vPanel() {
@@ -64,6 +71,7 @@ export async function vPanel() {
     return;
   }
   const org = cur;
+  const scale = getScaleSettings(org);
   const orgName = list.find((o) => o.id === org)?.name ?? org.slice(0, 8);
   const role = list.find((o) => o.id === org)?.role ?? 'vendedor';
   const canSeeStats = role === 'dueno' || role === 'admin' || isLocalContext(role, user);
@@ -79,6 +87,17 @@ export async function vPanel() {
   const low = prods.filter((p) => p.stock <= p.min_stock);
   const stockVal = prods.reduce((a, p) => a + p.price * p.stock, 0);
   const hist = await withTimeout(salesHistoryCloud(org, 50)).catch(() => []);
+  const allSales = [...hist, ...pend];
+  const isFresh = prods.length === 0 && allSales.length === 0;
+  const uid = (user as any)?.id;
+  const [receiptsCount, pinRec] = await Promise.all([
+    db.receipts.where('org_id').equals(org).count(),
+    uid ? db.pins.get(uid) : Promise.resolve(undefined),
+  ]);
+  let members: { id: string; name: string; email: string; role: string }[] = [];
+  if (canSeeStats && isCloudConfigured() && navigator.onLine) {
+    members = await withTimeout(listMembers(org), 6000).catch(() => []);
+  }
   const today = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'short' });
   const dayKey = (value: unknown) => {
     const d = new Date(value as string);
@@ -92,17 +111,25 @@ export async function vPanel() {
     const date = new Date(chartStart);
     date.setDate(chartStart.getDate() + index);
     const key = dayKey(date);
-    const total = [...hist, ...pend].reduce((sum, sale: any) => {
+    const total = allSales.reduce((sum, sale: any) => {
       const saleDate = sale.created_at ?? sale.createdAt;
       return sum + (dayKey(saleDate) === key ? Number(sale.total || 0) : 0);
     }, 0);
     return { label: date.toLocaleDateString('es-AR', { weekday: 'short' }).slice(0, 2), total };
   });
   const todayKey = dayKey(new Date());
-  const todayTotal = [...hist, ...pend].reduce((sum, sale: any) => {
-    const saleDate = sale.created_at ?? sale.createdAt;
-    return sum + (dayKey(saleDate) === todayKey ? Number(sale.total || 0) : 0);
-  }, 0);
+  const todaySales = allSales.filter((sale: any) => dayKey(sale.created_at ?? sale.createdAt) === todayKey);
+  const todayTotal = todaySales.reduce((sum, sale: any) => sum + Number(sale.total || 0), 0);
+  const todayCount = todaySales.length;
+  const goal = getDailyGoal(org);
+  const goalPct = goal > 0 ? Math.min(100, Math.round((todayTotal / goal) * 100)) : 0;
+  const goalReached = goal > 0 && todayTotal >= goal;
+  // Racha: días seguidos con al menos una venta, contando desde hoy.
+  const saleDays = new Set(allSales.map((sale: any) => dayKey(sale.created_at ?? sale.createdAt)).filter(Boolean));
+  let streak = 0;
+  const streakCursor = new Date();
+  streakCursor.setHours(0, 0, 0, 0);
+  while (saleDays.has(dayKey(streakCursor))) { streak++; streakCursor.setDate(streakCursor.getDate() - 1); }
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
   const userName = String((user as any)?.email ?? 'bienvenido').split('@')[0];
@@ -133,6 +160,51 @@ export async function vPanel() {
     : `<a class="quick-action" href="${a.href}"><b>${a.icon}</b><span>${a.label}<small>${a.sub}</small></span></a>`
   ).join('');
 
+  // --- Primeros pasos: guía amable para quien recién llega ---
+  const onbItems: { id: string; icon: string; title: string; desc: string; done: boolean; href?: string; install?: boolean }[] = (canSeeStats ? [
+    { id: 'product', icon: '📦', title: 'Cargá tu primer producto', desc: 'Con precio y stock listos para vender.', done: prods.length > 0, href: '#/productos' },
+    { id: 'sale', icon: '🛒', title: 'Hacé tu primera venta', desc: 'El stock se descuenta solo.', done: allSales.length > 0, href: '#/ventas' },
+    { id: 'receipt', icon: '🧷', title: 'Emití un recibo', desc: 'Presupuesto o comprobante para tu cliente.', done: receiptsCount > 0, href: '#/recibos' },
+    { id: 'pin', icon: '🔐', title: 'Configurá el PIN offline', desc: 'Seguí vendiendo si se corta internet.', done: !!pinRec, href: '#/equipo' },
+    { id: 'install', icon: '📱', title: 'Instalá la app', desc: 'Queda en el inicio como una app.', done: isInstalled(), install: true },
+  ] : []).filter((i) => !(i.id === 'pin' && (!uid || uid === 'local')));
+  if (canSeeStats && isCloudConfigured()) {
+    onbItems.splice(3, 0, { id: 'team', icon: '👥', title: 'Sumá a tu equipo', desc: 'Invitá a quien te ayuda a vender.', done: members.length > 1, href: '#/equipo' });
+  }
+  const onbDone = onbItems.filter((i) => i.done).length;
+  const onbComplete = onbItems.length > 0 && onbDone === onbItems.length;
+  if (onbComplete && !wasOnboardingCompleted(org)) {
+    markOnboardingCompleted(org);
+    setTimeout(() => { confetti(80); toast('¡Ya usás todo! Buen trabajo 🎉'); }, 500);
+  }
+  const showOnb = onbItems.length > 0 && !onbComplete && !isOnboardingHidden(org);
+  const onbPct = onbItems.length ? Math.round((onbDone / onbItems.length) * 100) : 0;
+
+  // --- Logros: se desbloquean solos ---
+  const achievements = [
+    { icon: '🌱', title: 'Primera venta', done: allSales.length > 0 },
+    { icon: '📦', title: 'Catálogo', done: prods.length > 0 },
+    { icon: '🔟', title: '10 ventas', done: allSales.length >= 10 },
+    { icon: '🎯', title: 'Meta del día', done: goalReached },
+    { icon: '🔥', title: 'Racha 3 días', done: streak >= 3 },
+    { icon: '🧷', title: 'Primer recibo', done: receiptsCount > 0 },
+  ];
+  const unlocked = achievements.filter((a) => a.done).length;
+
+  if (goalReached && !wasGoalCelebratedToday(org)) {
+    markGoalCelebratedToday(org);
+    setTimeout(() => { confetti(90); toast('¡Meta del día cumplida! 🎉'); }, 400);
+  }
+
+  const shareSummary = [
+    `📊 ${orgName} · ${today}`,
+    `Ventas de hoy: ${fmt(todayTotal)} (${todayCount} ${todayCount === 1 ? 'venta' : 'ventas'})`,
+    goal ? `🎯 Meta: ${fmt(goal)} · ${goalReached ? 'cumplida ✅' : goalPct + '%'}` : '',
+    low.length ? `📦 Para reponer: ${low.length} producto${low.length === 1 ? '' : 's'}` : '📦 Stock al día',
+    '',
+    'Gestionado con ZT Gestión',
+  ].filter(Boolean).join('\n');
+
   app.innerHTML = shell(`
   <div class="welcome-row">
     <div class="welcome-copy">
@@ -143,9 +215,25 @@ export async function vPanel() {
     <div class="welcome-actions">
       <a class="btn" href="#/ventas">🛒 Vender ahora</a>
       <a class="btn ghost" href="#/productos">${canSeeStats ? '📦 Cargar stock' : '📦 Ver stock'}</a>
+      ${canSeeStats ? '<button class="btn ghost" id="bShare" type="button">📤 Compartir resumen</button>' : ''}
     </div>
   </div>
-  ${canSeeStats ? `<div class="metric-grid">
+  ${showOnb ? `<div class="card onboarding-card">
+    <div class="onb-head">
+      <div>
+        <div class="eyebrow">Primeros pasos</div>
+        <h2>Dejá tu negocio listo</h2>
+        <p class="mut">${onbDone} de ${onbItems.length} completados · a tu ritmo.</p>
+      </div>
+      <button class="btn ghost small" id="bHideOnb" type="button">Ocultar</button>
+    </div>
+    <div class="onb-bar" role="progressbar" aria-valuenow="${onbPct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${onbPct}%"></i></div>
+    <div class="onb-list">${onbItems.map((i) => i.install
+      ? `<button class="onb-item ${i.done ? 'done' : ''}" type="button" data-install ${i.done ? 'disabled' : ''}><b>${i.icon}</b><span><strong>${i.title}</strong><small>${i.desc}</small></span><i class="onb-check">${i.done ? '✓' : '→'}</i></button>`
+      : `<a class="onb-item ${i.done ? 'done' : ''}" href="${i.href}"><b>${i.icon}</b><span><strong>${i.title}</strong><small>${i.desc}</small></span><i class="onb-check">${i.done ? '✓' : '→'}</i></a>`
+    ).join('')}</div>
+  </div>` : ''}
+  ${canSeeStats && !isFresh ? `<div class="metric-grid">
     <a class="metric-card" href="#/ventas">
       <b class="metric-icon">🛒</b>
       <span>Ventas de hoy</span>
@@ -171,13 +259,27 @@ export async function vPanel() {
       <small>${prods.length} producto${prods.length === 1 ? '' : 's'} cargado${prods.length === 1 ? '' : 's'}</small>
     </a>
   </div>` : ''}
+  ${canSeeStats && !isFresh ? `<div class="card goal-card${goalReached ? ' done' : ''}">
+    <div class="card-head">
+      <div>
+        <div class="eyebrow">Meta diaria</div>
+        <h3>${goal ? (goalReached ? '¡Meta cumplida! 🎉' : 'Vas por buen camino') : 'Ponete una meta para hoy'}</h3>
+        <p class="mut">${goal ? (goalReached ? `Vendiste ${fmt(todayTotal)} y superaste tu objetivo de ${fmt(goal)}.` : `Te faltan ${fmt(Math.max(0, goal - todayTotal))} para llegar a ${fmt(goal)}.`) : 'Un objetivo claro ayuda a cerrar el día con foco.'}</p>
+      </div>
+      <button class="btn ghost small" id="bGoal" type="button">${goal ? 'Cambiar meta' : 'Definir meta'}</button>
+    </div>
+    ${goal ? `<div class="goal-row"><strong>${fmt(todayTotal)}</strong><span>de ${fmt(goal)}</span><b>${goalPct}%</b></div>
+      <div class="goal-bar"><i style="width:${Math.min(100, goalPct)}%"></i></div>
+      <div class="goal-foot"><span>${todayCount} venta${todayCount === 1 ? '' : 's'} hoy</span><span>${goalReached ? '🎯 Objetivo logrado' : `Faltan ${fmt(Math.max(0, goal - todayTotal))}`}</span></div>`
+      : '<div class="goal-empty"><span>🎯</span><p>Definí cuánto querés vender hoy y mirá cómo crece la barra con cada venta.</p></div>'}
+  </div>` : ''}
   <div class="dash-grid">
     ${canSeeStats ? `<div class="card dash-wide chart-card">
       <div class="card-head">
-        <div><h3>Ventas de los últimos 7 días</h3><p class="mut">Total ${fmt(chartTotal)} · promedio ${fmt(dailyAvg)} por día</p></div>
+        <div><h3>Ventas de los últimos 7 días</h3><p class="mut">${chartTotal ? `Total ${fmt(chartTotal)} · promedio ${fmt(dailyAvg)} por día` : 'Tu evolución va a aparecer acá'}</p></div>
         ${chartTotal ? `<span class="pill ok">Mejor día ${fmt(bestDay.total)}</span>` : ''}
       </div>
-      <div class="sales-chart" role="img" aria-label="Ventas de los últimos siete días: ${fmt(chartTotal)}">${chartHTML}</div>
+      ${chartTotal ? `<div class="sales-chart" role="img" aria-label="Ventas de los últimos siete días: ${fmt(chartTotal)}">${chartHTML}</div>` : '<div class="empty-dashboard">📈 Hacé tu primera venta y mirá cómo crece la semana.</div>'}
     </div>` : `<div class="card dash-wide employee-home">
       <div class="employee-home-top"><b class="metric-icon big">🛒</b><div><h2>¿Arrancamos?</h2><p class="mut">Cobrá una venta y queda registrada al instante. El dueño la ve en su panel.</p></div></div>
       <a class="btn charge-btn" href="#/ventas">Cobrar una venta</a>
@@ -190,12 +292,41 @@ export async function vPanel() {
     <div class="card dash-side quick-card"><h3>Accesos rápidos</h3><div class="quick-actions">${quickActions}</div></div>
     <div class="card dash-wide">
       <div class="card-head"><h3>${canSeeStats ? 'Hay que reponer' : 'Productos con stock bajo'}</h3><a class="text-link" href="#/productos">Ver stock →</a></div>
-      ${low.length ? `<div class="reorder-list">${low.slice(0, 5).map((p) => `<div class="reorder-row"><div><b>${esc(p.name)}</b><small>Quedan ${p.stock} ${p.stock === 1 ? 'unidad' : 'unidades'}</small></div><strong>${fmt(p.price)}</strong></div>`).join('')}</div>` : '<div class="empty-dashboard">🌿 Todo en orden. No hay productos por reponer.</div>'}
+      ${low.length ? `<div class="reorder-list">${low.slice(0, 5).map((p) => `<div class="reorder-row"><div><b>${esc(p.name)}</b><small>Quedan ${p.sold_by_weight ? formatKg(p.stock, scale.decimals) : `${p.stock} ${p.stock === 1 ? 'unidad' : 'unidades'}`}</small></div><strong>${fmt(p.price)}${p.sold_by_weight ? ' /kg' : ''}</strong></div>`).join('')}</div>` : '<div class="empty-dashboard">🌿 Todo en orden. No hay productos por reponer.</div>'}
     </div>
     <div class="card dash-side"><h3>${canSeeStats ? 'Últimas ventas' : 'Movimientos recientes'}</h3>${hist.length ? `<div class="sales-list">${hist.slice(0, 5).map((h: any) => `<div class="sale-row"><span>${new Date(h.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span><b>${fmt(h.total)}</b></div>`).join('')}</div>` : '<div class="empty-dashboard">🧾 Todavía no hay ventas cargadas.</div>'}${pend.length ? `<p class="mut pending-note">+ ${pend.length} venta${pend.length === 1 ? '' : 's'} en este equipo · ${fmt(pendTotal)}</p>` : ''}</div>
+    ${canSeeStats ? `<div class="card dash-full achievements-card">
+      <div class="card-head"><div><h3>Logros</h3><p class="mut">${streak >= 2 ? `🔥 Racha de ${streak} días vendiendo.` : 'Se desbloquean solos a medida que usás la app.'}</p></div><span class="pill ${unlocked === achievements.length ? 'ok' : ''}">${unlocked}/${achievements.length}</span></div>
+      <div class="achievement-grid">${achievements.map((a) => `<div class="achievement ${a.done ? 'on' : ''}"><i>${a.done ? a.icon : '🔒'}</i><span>${esc(a.title)}</span></div>`).join('')}</div>
+    </div>` : ''}
     <div class="card sync-card"><div class="row" style="justify-content:space-between;align-items:center"><div><h3 style="margin:0">Ventas guardadas</h3><p class="${pendError ? 'sync-error' : 'mut'}">${pendError ? `No se pudo subir: ${esc(pendError)}` : 'Tus ventas quedan guardadas en este equipo y se suben cuando hay internet.'}</p></div><div class="row">${pendError ? '<button class="btn ghost small" id="bWhy">Ver detalle</button>' : ''}<button class="btn small" id="bSync">Subir ventas</button></div></div><span class="mut" id="syncMsg"></span></div>
   </div>`, 'panel', { orgs: list, org, email: (user as any)?.email, syncMsg });
   bindCommon(list, org);
+  (document.getElementById('bHideOnb') as HTMLButtonElement | null)?.addEventListener('click', () => {
+    hideOnboarding(org); toast('Listo, podés verla de nuevo desde el panel'); navigate();
+  });
+  (document.getElementById('bGoal') as HTMLButtonElement | null)?.addEventListener('click', async () => {
+    const value = await promptModal({
+      title: 'Meta diaria',
+      label: '¿Cuánto querés vender hoy?',
+      value: goal ? String(goal) : '',
+      type: 'number',
+      placeholder: 'Ej: 150000',
+      hint: 'Dejalo en 0 para quitar la meta.',
+      okLabel: 'Guardar meta',
+    });
+    if (value === null) return;
+    const amount = Math.max(0, Math.round(Number(value) || 0));
+    setDailyGoal(org, amount);
+    toast(amount ? `Meta de hoy: ${fmt(amount)}` : 'Meta quitada');
+    if (amount && todayTotal >= amount) { markGoalCelebratedToday(org); confetti(); }
+    navigate();
+  });
+  (document.getElementById('bShare') as HTMLButtonElement | null)?.addEventListener('click', async () => {
+    const result = await shareText(`Resumen de ${orgName}`, shareSummary);
+    if (result === 'copied') toast('Resumen copiado, pegalo en WhatsApp');
+    else if (result === 'shared') toast('Resumen compartido');
+  });
   (document.getElementById('bWhy') as HTMLButtonElement | null)?.addEventListener('click', () => {
     infoModal('Ventas sin subir', pendError || 'La venta sigue pendiente. Volvé a iniciar sesión y presioná Sincronizar.');
   });

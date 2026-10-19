@@ -190,6 +190,7 @@ const productFromCloud = (p: any, org_id: string, now: number): LocalProduct => 
   min_stock: Number(p.min_stock ?? 3),
   category: p.category ?? 'general',
   barcode: p.barcode ?? '',
+  sold_by_weight: p.sold_by_weight ? 1 : 0,
   updatedAt: now
 });
 
@@ -213,7 +214,12 @@ export async function pullProducts(org_id: string) {
     const remoteIds = new Set(rows.map((p: any) => p.id));
     const merged: LocalProduct[] = rows.map((p: any) => {
       const local = localById.get(p.id);
-      return local?.dirty ? local : productFromCloud(p, org_id, now);
+      if (local?.dirty) return local;
+      const next = productFromCloud(p, org_id, now);
+      // Servidores viejos sin la columna: conservamos la marca local en vez de
+      // borrarla en cada descarga.
+      if (!('sold_by_weight' in p) && local?.sold_by_weight) next.sold_by_weight = local.sold_by_weight;
+      return next;
     });
 
     const localOnlyDirty = localRows.filter((p) => p.dirty && !remoteIds.has(p.id));
@@ -247,16 +253,33 @@ async function reconcilePushedProduct(localId: string, pushedUpdatedAt: number, 
   });
 }
 
+const productRemotePayload = (local: LocalProduct, stock: number) => ({
+  org: local.org_id, name: local.name, price: local.price, stock,
+  min_stock: local.min_stock, category: local.category, barcode: local.barcode ?? '',
+  active: true, local_id: local.id,
+  sold_by_weight: !!local.sold_by_weight,
+});
+
+// Compatibilidad con servidores viejos que todavía no tienen la columna.
+const isWeightSchemaError = (e: any) => /sold_by_weight|unknown field/i.test(errorText(e));
+const withoutWeightField = (payload: Record<string, any>) => {
+  const copy = { ...payload };
+  delete copy.sold_by_weight;
+  return copy;
+};
+
 async function pushProductUpdate(local: LocalProduct) {
   const remote: any = await pb.collection('products').getOne(local.id);
   const remoteStock = Number(remote.stock || 0);
   const base = Number.isFinite(local.syncedStock) ? Number(local.syncedStock) : remoteStock;
   const nextStock = remoteStock + (Number(local.stock || 0) - base);
-  await pb.collection('products').update(local.id, {
-    org: local.org_id, name: local.name, price: local.price, stock: nextStock,
-    min_stock: local.min_stock, category: local.category, barcode: local.barcode ?? '', active: true,
-    local_id: local.id,
-  });
+  const payload = productRemotePayload(local, nextStock);
+  try {
+    await pb.collection('products').update(local.id, payload);
+  } catch (e) {
+    if (!isWeightSchemaError(e)) throw e;
+    await pb.collection('products').update(local.id, withoutWeightField(payload));
+  }
   await reconcilePushedProduct(local.id, local.updatedAt, nextStock);
 }
 
@@ -292,10 +315,13 @@ async function ensureProductRemote(local: LocalProduct): Promise<string | null> 
     created = await pb.collection('products').getFirstListItem(`org="${local.org_id}" && local_id="${local.id}"`);
   } catch (existingError) {
     if (!isNotFound(existingError)) throw existingError;
-    created = await pb.collection('products').create({
-      org: local.org_id, name: local.name || '(sin nombre)', price: local.price, stock: local.stock,
-      min_stock: local.min_stock, category: local.category, barcode: local.barcode ?? '', active: true, local_id: local.id
-    });
+    const payload = { ...productRemotePayload(local, local.stock), name: local.name || '(sin nombre)' };
+    try {
+      created = await pb.collection('products').create(payload);
+    } catch (e) {
+      if (!isWeightSchemaError(e)) throw e;
+      created = await pb.collection('products').create(withoutWeightField(payload));
+    }
   }
 
   // Reconciliamos el ID local con el ID de PocketBase sin perder una edición
@@ -383,14 +409,14 @@ export async function deleteProductLocal(id: string) {
 }
 
 export function newLocalProduct(org_id: string): LocalProduct {
-  return { id: uid(), org_id, name: '', price: 0, stock: 0, min_stock: 3, category: 'general', dirty: 1, deleted: 0, updatedAt: Date.now() };
+  return { id: uid(), org_id, name: '', price: 0, stock: 0, min_stock: 3, category: 'general', sold_by_weight: 0, dirty: 1, deleted: 0, updatedAt: Date.now() };
 }
 
 // ---- Ventas offline ----
 export async function createSaleOffline(org_id: string, items: OutboxSale['items'], pay_method: string) {
   const normalized = new Map<string, OutboxSale['items'][number]>();
   for (const item of items) {
-    if (!Number.isInteger(item.qty) || item.qty <= 0) throw new Error('Cantidad inválida');
+    if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error('Cantidad inválida');
     const previous = normalized.get(item.product_id);
     normalized.set(item.product_id, previous
       ? { ...previous, qty: previous.qty + item.qty }

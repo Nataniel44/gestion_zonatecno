@@ -9,6 +9,9 @@ export interface LocalProduct {
   min_stock: number;
   category: string;
   barcode?: string;
+  // 1 = se vende por peso (balanza). En ese caso `price` es el precio por kg
+  // y `stock` se mide en kg.
+  sold_by_weight?: number;
   dirty?: number; // 1 = pendiente de subir
   deleted?: number; // 1 = borrado lógicamente en la nube
   lastError?: string; // último error al intentar subir este producto

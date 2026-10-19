@@ -45,6 +45,7 @@ aplicar estas reglas en el servidor:
 - `category`: text, default `general`
 - `active`: bool, default true
 - `barcode`: text — código de barras para lector
+- `sold_by_weight`: bool — el producto se vende por peso (precio por kg y stock en kg)
 - `local_id`: text — evita duplicar un producto creado offline
 
 ## 4. clients (base)

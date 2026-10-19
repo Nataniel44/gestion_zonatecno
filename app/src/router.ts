@@ -13,6 +13,7 @@ import { vTickets } from './views/tickets';
 import { vRecibos } from './views/recibos';
 import { vEquipo } from './views/equipo';
 import { vAdmin } from './views/admin';
+import { vAjustes } from './views/ajustes';
 
 export async function router() {
   setBarcodeHandler(null);
@@ -26,6 +27,7 @@ export async function router() {
     else if (h.startsWith('#/caja')) await vCaja();
     else if (h.startsWith('#/tickets')) await vTickets();
     else if (h.startsWith('#/recibos')) await vRecibos();
+    else if (h.startsWith('#/ajustes')) await vAjustes();
     else if (h.startsWith('#/admin')) await vAdmin();
     else await vPanel();
   } catch (e: any) {

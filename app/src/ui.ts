@@ -45,6 +45,38 @@ export function infoModal(title: string, body: string) {
   ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
 }
 
+// Modal de un solo campo. Devuelve el texto o null si se cancela.
+export function promptModal(opts: {
+  title: string;
+  label: string;
+  value?: string;
+  type?: string;
+  placeholder?: string;
+  hint?: string;
+  okLabel?: string;
+}): Promise<string | null> {
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.className = 'ovl';
+    ov.innerHTML = `<form class="card modal-card" id="promptForm">
+      <h2>${esc(opts.title)}</h2>
+      <div class="field"><label for="promptValue">${esc(opts.label)}</label>
+        <input id="promptValue" type="${esc(opts.type ?? 'text')}" value="${esc(opts.value ?? '')}" placeholder="${esc(opts.placeholder ?? '')}" />
+      </div>
+      ${opts.hint ? `<p class="hint">${esc(opts.hint)}</p>` : ''}
+      <div class="row" style="margin-top:.7rem"><button class="btn" type="submit">${esc(opts.okLabel ?? 'Guardar')}</button><button class="btn ghost" type="button" id="promptCancel">Cancelar</button></div>
+    </form>`;
+    document.body.appendChild(ov);
+    const input = document.getElementById('promptValue') as HTMLInputElement;
+    const done = (value: string | null) => { ov.remove(); resolve(value); };
+    (document.getElementById('promptCancel') as HTMLButtonElement).onclick = () => done(null);
+    (document.getElementById('promptForm') as HTMLFormElement).onsubmit = (e) => { e.preventDefault(); done(input.value); };
+    ov.addEventListener('click', (e) => { if (e.target === ov) done(null); });
+    input.focus();
+    if (input.value) input.select();
+  });
+}
+
 export const getAccountType = () => (localStorage.getItem('zt_account_type') === 'empleado' ? 'empleado' : 'negocio');
 export const setAccountType = (type: string) => localStorage.setItem('zt_account_type', type === 'empleado' ? 'empleado' : 'negocio');
 export const myIdBlock = (user: any) => (user?.id ? `<div class="my-id"><small>Tu ID para que te inviten</small><code id="myId">${esc(user.id)}</code><button class="btn ghost small" id="bCopyId">Copiar</button></div>` : '');
