@@ -35,14 +35,17 @@ export async function vProductos(q = '') {
   const scanner = getScannerSettings();
   const view = rows.filter((p) => !ql || `${p.name} ${p.barcode ?? ''}`.toLowerCase().includes(ql)).sort((a, b) => a.name.localeCompare(b.name));
   app.innerHTML = shell(`
-  <div class="card"><div class="row stock-head" style="justify-content:space-between">
-    <div class="row" style="flex:1;min-width:min(100%,240px)"><input id="q" placeholder="Buscar producto…" value="${esc(q)}" style="max-width:260px;flex:1"/></div>
-    ${canManageProducts ? '<button class="btn small" id="bNew">+ Producto</button>' : '<span class="pill">Solo lectura para vendedores</span>'}<span class="pill">Tu permiso: ${permLabel}</span>
+  <div class="card"><div class="row stock-head">
+    <div class="stock-search"><input id="q" placeholder="Buscar producto…" value="${esc(q)}" aria-label="Buscar producto" /></div>
+    <div class="stock-actions">${canManageProducts ? '<button class="btn small" id="bNew">+ Producto</button>' : '<span class="pill">Solo lectura para vendedores</span>'}<span class="pill">Tu permiso: ${permLabel}</span></div>
   </div>
-  <div class="table-wrap"><table><tr><th>Producto</th><th>Precio</th><th>Stock</th><th></th></tr>
-  <tbody id="productRows">${view.map((p) => `<tr data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}"><td><b>${esc(p.name || '(sin nombre)')}</b>${p.dirty ? ' <span class="pill warn">sin subir</span>' : ''}${p.lastError ? ' <span class="pill bad">revisar</span>' : ''}<br/><span class="mut">${esc(p.category)}${p.lastError ? ' · ' + esc(p.lastError) : ''}</span></td>
-    <td>${fmt(p.price)}</td><td class="${p.stock <= p.min_stock ? 'low' : ''}">${p.stock}</td>
-    <td style="white-space:nowrap">${canManageProducts ? `<button class="btn ghost small" data-edit="${p.id}">Editar</button> <button class="btn ghost small" data-del="${p.id}">Borrar</button>` : '<span class="mut">—</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="mut">Sin productos. Creá el primero con + Producto.</td></tr>'}
+  <div class="table-wrap table-cards"><table>
+  <thead><tr><th>Producto</th><th>Precio</th><th>Stock</th><th aria-label="Acciones"></th></tr></thead>
+  <tbody id="productRows">${view.map((p) => `<tr data-name="${esc(`${p.name} ${p.barcode ?? ''}`.toLowerCase())}">
+    <td class="cell-name"><b>${esc(p.name || '(sin nombre)')}</b>${p.dirty ? ' <span class="pill warn">sin subir</span>' : ''}${p.lastError ? ' <span class="pill bad">revisar</span>' : ''}<br/><span class="mut">${esc(p.category)}${p.lastError ? ' · ' + esc(p.lastError) : ''}</span></td>
+    <td class="cell-price" data-label="Precio">${fmt(p.price)}</td>
+    <td class="cell-stock${p.stock <= p.min_stock ? ' low' : ''}" data-label="Stock">${p.stock}</td>
+    <td class="cell-actions">${canManageProducts ? `<button class="btn ghost small" data-edit="${p.id}">Editar</button> <button class="btn ghost small" data-del="${p.id}">Borrar</button>` : '<span class="mut">—</span>'}</td></tr>`).join('') || '<tr class="row-empty"><td colspan="4" class="mut">Sin productos. Creá el primero con + Producto.</td></tr>'}
   </tbody></table></div></div>
   <div class="card" id="editor" style="display:none"><h2 id="edT">Producto</h2>
     <div class="grid2"><input id="fName" placeholder="Nombre *" /><input id="fCat" placeholder="Categoría" />

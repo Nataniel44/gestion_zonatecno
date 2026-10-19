@@ -126,6 +126,7 @@ aplicar estas reglas en el servidor:
 - `pay_method`: text · `status`: text (`pagado`/`seña`/`pendiente`)
 - `notes`, `warranty_text`, `seller`: text
 - `biz_name`, `biz_address`, `biz_phone`, `biz_cuit`, `biz_footer`: text — foto del negocio al emitir
+- `voided`: bool — `true` = anulado (no se borra el comprobante; se oculta y no se reutiliza el número)
 - `local_id`: text — idempotencia offline
 
 ## users

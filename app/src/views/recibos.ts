@@ -76,7 +76,7 @@ export async function vRecibos() {
       <div class="row" style="margin:.6rem 0"><input id="rcQ" placeholder="Buscar por cliente, número o equipo…" style="max-width:320px"/></div>
       <div class="rc-list" id="rcList">${receipts.map((r) => `
         <div class="rc-row" data-name="${esc(`${r.client_name} ${r.number} ${r.device} ${r.title}`.toLowerCase())}"><div><b>${esc(r.number)} · ${esc(r.title)}</b><small>${esc(r.client_name)} · ${fmt(r.total)} · ${new Date(r.createdAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${esc(r.status)}</small></div>
-        <div class="row"><button class="btn ghost small" data-view="${r.id}">Ver / Imprimir</button><button class="btn ghost small" data-del-rc="${r.id}">Borrar</button></div></div>`).join('') || '<div class="empty-dashboard">🧷 Todavía no hay recibos. Creá el primero con + Nuevo recibo.</div>'}</div>
+        <div class="row"><button class="btn ghost small" data-view="${r.id}">Ver / Imprimir</button><button class="btn ghost small" data-del-rc="${r.id}">Anular</button></div></div>`).join('') || '<div class="empty-dashboard">🧷 Todavía no hay recibos. Creá el primero con + Nuevo recibo.</div>'}</div>
     </div>
     <div class="card span4">
       <h2>Datos de tu local</h2><p class="mut">Esto sale impreso grande en cada recibo.</p>
@@ -219,8 +219,8 @@ export async function vRecibos() {
     box.scrollIntoView({ behavior: 'smooth' });
   });
   document.querySelectorAll('[data-del-rc]').forEach((b) => (b as HTMLButtonElement).onclick = async () => {
-    if (!await confirmModal('¿Borrar este recibo de este equipo?', 'Borrar', 'Borrar recibo')) return;
-    await deleteReceipt((b as HTMLButtonElement).dataset.delRc!);
-    toast('Recibo borrado'); navigate();
+    if (!await confirmModal('¿Anular este recibo? No se borra el comprobante: queda marcado como anulado en todos los equipos.', 'Anular', 'Anular recibo')) return;
+    await deleteReceipt(org, (b as HTMLButtonElement).dataset.delRc!);
+    toast('Recibo anulado'); navigate();
   });
 }

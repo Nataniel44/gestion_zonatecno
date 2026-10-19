@@ -5,71 +5,106 @@ const PB_URL = 'https://app.zonatecno.uno';
 ---
 <Layout title="Admin gangas — ZonaTecno" description="Panel privado para publicar gangas.">
   <!-- noindex: no linkear /admin en ningún lado -->
+  <style>
+    .adm-wrap { max-width: 46rem; }
+    .adm-head { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+    .adm-head h1 { margin: 0; font-size: 1.5rem; }
+    .pill { font-size: .75rem; font-weight: 700; padding: .25rem .6rem; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+    .pill.on { color: #0ec254; border-color: #1c5c38; background: #0e2a1c; }
+    .step { display: flex; gap: .8rem; }
+    .step-n { flex: none; width: 2rem; height: 2rem; border-radius: 50%; background: #0e2a1c; border: 1px solid #1c5c38; color: #0ec254; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    .adm-input { width: 100%; padding: .65rem .7rem; border-radius: 10px; border: 1px solid var(--line); background: #0a141f; color: #fff; font-size: .92rem; }
+    .adm-input:focus { outline: none; border-color: #0ec254; }
+    .adm-label { display: grid; gap: .3rem; font-size: .85rem; color: var(--muted); font-weight: 600; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+    @media (max-width: 560px) { .row2 { grid-template-columns: 1fr; } }
+    .msg { font-size: .86rem; min-height: 1.2em; }
+    .msg.ok { color: #0ec254; } .msg.err { color: #ff7a7a; } .msg.warn { color: #ffce54; }
+    .linkbox { display: none; background: #0e2a1c; border: 1px solid #1c5c38; border-radius: 12px; padding: .8rem; font-size: .88rem; }
+    .linkbox code { word-break: break-all; color: #fff; }
+    .g-row { display: flex; align-items: center; gap: .6rem; padding: .55rem 0; border-top: 1px solid var(--line); font-size: .86rem; flex-wrap: wrap; }
+    .g-row:first-of-type { border-top: 0; }
+    .tag { font-size: .72rem; font-weight: 800; padding: .15rem .5rem; border-radius: 99px; }
+    .tag.disponible { background: #0e2a1c; color: #0ec254; border: 1px solid #1c5c38; }
+    .tag.reservada { background: #2a230e; color: #ffce54; border: 1px solid #5c4d1c; }
+    .tag.vendida { background: #2a0e0e; color: #ff7a7a; border: 1px solid #5c1c1c; }
+    .mini-btn { font-size: .78rem; padding: .3rem .6rem; border-radius: 8px; border: 1px solid var(--line); background: #0a141f; color: #fff; cursor: pointer; }
+    .mini-btn:hover { border-color: #0ec254; }
+  </style>
+
   <section class="shop-hero">
     <div id="lock" style="position:fixed;inset:0;z-index:99;background:#050c14;display:flex;align-items:center;justify-content:center;padding:1rem">
-      <div class="card" style="padding:1.2rem;max-width:22rem;width:100%;text-align:center">
-        <h2 style="margin:0 0 .4rem">🔒 Admin</h2>
-        <p style="color:var(--muted);font-size:.85rem">Zona privada. Ingresá la clave.</p>
-        <input id="adminPass" type="password" placeholder="Contraseña" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff;margin:.6rem 0" />
+      <div class="card" style="padding:1.4rem;max-width:22rem;width:100%;text-align:center">
+        <div style="font-size:2.4rem">🔒</div>
+        <h2 style="margin:.3rem 0">Admin ZonaTecno</h2>
+        <p style="color:var(--muted);font-size:.85rem">Panel privado de gangas. Ingresá la clave del panel.</p>
+        <input id="adminPass" class="adm-input" type="password" placeholder="Clave del panel" style="margin:.6rem 0" />
         <button class="btn btn-primary btn-block" id="unlockBtn">Entrar</button>
-        <div id="lockMsg" style="font-size:.82rem;margin-top:.4rem;color:var(--muted)"></div>
+        <div id="lockMsg" class="msg err" style="margin-top:.4rem"></div>
       </div>
     </div>
-    <div class="container" style="max-width:44rem">
-      <div class="crumbs"><a href="/">Inicio</a> / <b>Admin</b></div>
-      <h1>Publicar ganga 📱</h1>
-      <p style="color:var(--muted)">Sale <b style="color:#fff">al instante</b> en PocketBase. Sin esperar rebuild.</p>
 
-      <div class="card" style="padding:1rem;margin-top:1rem">
-        <h3 style="margin:0 0 .6rem">1. Tu cuenta (la misma de gestión)</h3>
-        <div style="display:grid;gap:.5rem">
-          <input id="pbEmail" type="email" placeholder="tu@email.com" autocomplete="username" style="padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" />
-          <input id="pbPass" type="password" placeholder="tu contraseña de gestión" autocomplete="current-password" style="padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" />
-          <button class="btn btn-ghost btn-sm" id="pbLogin">Entrar</button>
+    <div class="container adm-wrap">
+      <div class="crumbs"><a href="/">Inicio</a> / <b>Admin</b></div>
+      <div class="adm-head">
+        <h1>Publicar ganga 📱</h1>
+        <span class="pill" id="connPill">● Desconectado</span>
+      </div>
+      <p style="color:var(--muted)">Se publica <b style="color:#fff">al instante</b>, sin esperar rebuild. El link sirve en el momento para IG.</p>
+
+      <div class="card step" style="padding:1rem;margin-top:1rem">
+        <div class="step-n">1</div>
+        <div style="flex:1;display:grid;gap:.5rem">
+          <div><strong>Entrá con tu usuario de gestión</strong><br /><span style="color:var(--muted);font-size:.84rem">Es el mismo email y contraseña que usás en <code>app.zonatecno.uno</code> para ventas y stock. PocketBase lo pide para que solo vos puedas publicar.</span></div>
+          <div class="row2">
+            <input id="pbEmail" class="adm-input" type="email" placeholder="tu@email.com" autocomplete="username" />
+            <input id="pbPass" class="adm-input" type="password" placeholder="Contraseña de gestión" autocomplete="current-password" />
+          </div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" id="pbLogin">Conectar</button>
+            <button class="mini-btn" id="pbLogout" style="display:none">Salir</button>
+          </div>
+          <div id="pbMsg" class="msg"></div>
         </div>
-        <div id="pbMsg" style="font-size:.82rem;margin-top:.4rem"></div>
       </div>
 
-      <form class="card" id="gangaForm" style="padding:1rem;margin-top:1rem;display:grid;gap:.7rem">
-        <h3 style="margin:0">2. La ganga de hoy</h3>
-        <label>Título* <input name="titulo" required placeholder="iPhone 13 · 128GB · Azul" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
-        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-          <label style="flex:1">Precio* <input name="precio" type="number" required placeholder="620000" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
-          <label style="flex:1">Precio ref <input name="precioRef" type="number" placeholder="750000" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
+      <form class="card step" id="gangaForm" style="padding:1rem;margin-top:1rem">
+        <div class="step-n">2</div>
+        <div style="flex:1;display:grid;gap:.7rem">
+          <div><strong>La ganga de hoy</strong></div>
+          <label class="adm-label">Título* <input class="adm-input" name="titulo" required placeholder="iPhone 13 · 128GB · Azul" /></label>
+          <div class="row2">
+            <label class="adm-label">Precio* <input class="adm-input" name="precio" type="number" min="1" required placeholder="620000" /></label>
+            <label class="adm-label">Precio de referencia <input class="adm-input" name="precioRef" type="number" min="0" placeholder="750000" /></label>
+          </div>
+          <label class="adm-label">Condición* <input class="adm-input" name="condicion" required placeholder="Usado · Batería 89% · iCloud libre" /></label>
+          <label class="adm-label">Detalle <textarea class="adm-input" name="detalle" rows="3" placeholder="Dónde lo viste, qué verificás, seña 30%, entrega..."></textarea></label>
+          <div class="row2">
+            <label class="adm-label">Fuente <input class="adm-input" name="fuente" placeholder="Grupo compraventa San Vicente" /></label>
+            <label class="adm-label">Link original <input class="adm-input" name="fuenteUrl" inputmode="url" placeholder="https://..." /></label>
+          </div>
+          <button class="btn btn-primary" type="submit" id="pubBtn">Publicar ganga →</button>
+          <div id="formMsg" class="msg"></div>
+          <div id="linkBox" class="linkbox"></div>
         </div>
-        <label>Condición* <input name="condicion" required placeholder="Usado · Batería 89% · iCloud libre" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
-        <label>Detalle <textarea name="detalle" rows="3" placeholder="Dónde lo viste, qué verificás, seña 30%, entrega..." style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff"></textarea></label>
-        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-          <label style="flex:1">Fuente <input name="fuente" placeholder="Grupo compraventa San Vicente" style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
-          <label style="flex:1">Link original <input name="fuenteUrl" placeholder="https://..." style="width:100%;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" /></label>
-        </div>
-        <button class="btn btn-primary" type="submit" id="pubBtn">Publicar ganga →</button>
-        <div id="formMsg" style="font-size:.88rem"></div>
-        <div id="linkBox" style="display:none;background:#0e2a1c;border:1px solid #1c5c38;border-radius:10px;padding:.7rem;font-size:.88rem"></div>
       </form>
 
-      <div class="card" style="padding:1rem;margin-top:1rem">
-        <h3 style="margin:0 0 .6rem">3. Marcar vendida / reservada</h3>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <input id="slugEstado" placeholder="slug-de-la-ganga" style="flex:1;min-width:180px;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:#0a141f;color:#fff" />
-          <select id="nuevoEstado" style="padding:.6rem;border-radius:8px;background:#0a141f;color:#fff;border:1px solid var(--line)">
-            <option value="reservada">reservada</option>
-            <option value="vendida">vendida</option>
-            <option value="disponible">disponible</option>
-          </select>
-          <button class="btn btn-ghost btn-sm" id="cambiarEstado">Actualizar</button>
+      <div class="card step" style="padding:1rem;margin-top:1rem">
+        <div class="step-n">3</div>
+        <div style="flex:1;display:grid;gap:.5rem">
+          <div><strong>Vendidas / reservadas</strong><br /><span style="color:var(--muted);font-size:.84rem">Tocá el estado directo en la lista, sin escribir slugs.</span></div>
+          <button class="mini-btn" id="reloadList" style="justify-self:start">↻ Actualizar lista</button>
+          <div id="gangaList"><p style="color:var(--muted);font-size:.85rem">Conectate en el paso 1 para verlas.</p></div>
+          <div id="estadoMsg" class="msg"></div>
         </div>
-        <div id="estadoMsg" style="font-size:.84rem;margin-top:.4rem"></div>
       </div>
     </div>
   </section>
 
   <script define:vars={{ PB_URL }}>
-    // Candado local (Eladmin123 hasheada) + auth real de PocketBase
     const ADMIN_HASH = '8d5ba70d33f3a1c7be66b9172b80a9d6a8416abd3b4f5e6ce0824e936413999d';
-    const lock = document.getElementById('lock');
-    const passInput = document.getElementById('adminPass');
-    const lockMsg = document.getElementById('lockMsg');
+    const $ = (id) => document.getElementById(id);
+    const lock = $('lock'), passInput = $('adminPass'), lockMsg = $('lockMsg');
     if (sessionStorage.getItem('zt_admin_ok') === '1') lock.style.display = 'none';
     async function sha(s) {
       const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -79,18 +114,30 @@ const PB_URL = 'https://app.zonatecno.uno';
       if (await sha(passInput.value) === ADMIN_HASH) { sessionStorage.setItem('zt_admin_ok', '1'); lock.style.display = 'none'; }
       else lockMsg.textContent = '❌ Clave incorrecta.';
     }
-    document.getElementById('unlockBtn').onclick = unlock;
+    $('unlockBtn').onclick = unlock;
     passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') unlock(); });
 
     const slugify = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+    const setMsg = (el, txt, cls) => { el.textContent = txt; el.className = 'msg ' + (cls || ''); };
+    const pill = $('connPill'), pbMsg = $('pbMsg');
     let pbToken = sessionStorage.getItem('zt_pb_token') || '';
-    const pbMsg = document.getElementById('pbMsg');
-    if (pbToken) pbMsg.textContent = '✓ Sesión de gestión activa.';
+    $('pbEmail').value = localStorage.getItem('zt_pb_email') || '';
 
-    document.getElementById('pbLogin').onclick = async () => {
-      const identity = document.getElementById('pbEmail').value.trim();
-      const password = document.getElementById('pbPass').value;
-      pbMsg.textContent = '⏳ Verificando...';
+    function paintConn(email) {
+      const on = !!pbToken;
+      pill.textContent = on ? '● Conectado' : '● Desconectado';
+      pill.classList.toggle('on', on);
+      $('pbLogout').style.display = on ? '' : 'none';
+      if (on) setMsg(pbMsg, '✓ Conectado' + (email ? ' como ' + email : ''), 'ok');
+    }
+    paintConn(localStorage.getItem('zt_pb_email'));
+    if (pbToken) loadList();
+
+    $('pbLogin').onclick = async () => {
+      const identity = $('pbEmail').value.trim();
+      const password = $('pbPass').value;
+      if (!identity || !password) { setMsg(pbMsg, '⚠️ Completá email y contraseña.', 'warn'); return; }
+      setMsg(pbMsg, '⏳ Verificando...', '');
       try {
         const r = await fetch(`${PB_URL}/api/collections/users/auth-with-password`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -100,27 +147,32 @@ const PB_URL = 'https://app.zonatecno.uno';
         const d = await r.json();
         pbToken = d.token;
         sessionStorage.setItem('zt_pb_token', pbToken);
-        document.getElementById('pbPass').value = '';
-        pbMsg.textContent = '✓ Conectado como ' + (d.record?.email || identity);
-      } catch (err) { pbMsg.textContent = '❌ ' + err.message; }
+        localStorage.setItem('zt_pb_email', d.record?.email || identity);
+        $('pbPass').value = '';
+        paintConn(d.record?.email || identity);
+        loadList();
+      } catch (err) { setMsg(pbMsg, '❌ ' + err.message, 'err'); }
+    };
+    $('pbLogout').onclick = () => {
+      pbToken = ''; sessionStorage.removeItem('zt_pb_token');
+      paintConn(); setMsg(pbMsg, 'Sesión cerrada.', '');
+      $('gangaList').innerHTML = '<p style="color:var(--muted);font-size:.85rem">Conectate en el paso 1 para verlas.</p>';
     };
 
-    document.getElementById('gangaForm').onsubmit = async (e) => {
+    $('gangaForm').onsubmit = async (e) => {
       e.preventDefault();
-      const msg = document.getElementById('formMsg');
-      const linkBox = document.getElementById('linkBox');
-      if (!pbToken) { msg.textContent = '⚠️ Entrá con tu cuenta de gestión primero (paso 1).'; return; }
+      const msg = $('formMsg'), linkBox = $('linkBox');
+      if (!pbToken) { setMsg(msg, '⚠️ Primero conectate en el paso 1.', 'warn'); return; }
       const fd = new FormData(e.target);
       const titulo = String(fd.get('titulo') || '').trim();
       const precio = Number(fd.get('precio'));
-      if (!titulo || !precio) { msg.textContent = '⚠️ Faltan título y precio.'; return; }
+      if (!titulo || !precio) { setMsg(msg, '⚠️ Faltan título y precio.', 'warn'); return; }
       const slug = slugify(titulo) + '-' + Math.random().toString(36).slice(2, 6);
-      msg.textContent = '⏳ Publicando...';
+      const btn = $('pubBtn'); btn.disabled = true; btn.textContent = '⏳ Publicando...';
+      setMsg(msg, '', '');
       try {
         const entry = {
-          slug,
-          titulo,
-          precio,
+          slug, titulo, precio,
           precioRef: Number(fd.get('precioRef')) || 0,
           condicion: String(fd.get('condicion') || '').trim(),
           detalle: String(fd.get('detalle') || '').trim() || 'Intermediación verificada. Seña 30%, lo buscamos y entregamos en San Vicente.',
@@ -134,38 +186,58 @@ const PB_URL = 'https://app.zonatecno.uno';
           headers: { 'Content-Type': 'application/json', Authorization: pbToken },
           body: JSON.stringify(entry),
         });
-        if (r.status === 401) { sessionStorage.removeItem('zt_pb_token'); pbToken = ''; throw new Error('Sesión vencida, volvé a entrar en el paso 1.'); }
-        if (!r.ok) throw new Error('PocketBase rechazó la ganga (' + r.status + '). ¿Corriste el setup para crear la colección?');
-        const url = `https://zonatecno.uno/gangas/ver/?slug=${slug}`;
-        msg.textContent = '✓ Publicada al instante.';
+        if (r.status === 401) { pbToken = ''; sessionStorage.removeItem('zt_pb_token'); paintConn(); throw new Error('Sesión vencida, volvé al paso 1.'); }
+        if (!r.ok) throw new Error('Rechazada (' + r.status + '). ¿Corriste el setup de la colección gangas?');
+        const url = `https://zonatecno.uno/gangas/ver/?slug=${slug}&src=ig_post`;
+        setMsg(msg, '✓ Publicada al instante.', 'ok');
         linkBox.style.display = 'block';
-        linkBox.innerHTML = `Copiá para IG:<br/><code>${url}&src=ig_post</code><br/><br/><a href="${url}" target="_blank" rel="noopener">Ver página →</a>`;
+        linkBox.innerHTML = `<b style="color:#0ec254">Copiá para IG:</b><br/><code>${url}</code><br/><br/><button class="mini-btn" id="copyLink">📋 Copiar link</button> <a href="${url}" target="_blank" rel="noopener" style="color:#0ec254;font-weight:700">Ver página →</a>`;
+        $('copyLink').onclick = async () => { try { await navigator.clipboard.writeText(url); $('copyLink').textContent = '✓ Copiado'; } catch { $('copyLink').textContent = url; } };
         e.target.reset();
-      } catch (err) { msg.textContent = '❌ ' + err.message; }
+        loadList();
+      } catch (err) { setMsg(msg, '❌ ' + err.message, 'err'); }
+      finally { btn.disabled = false; btn.textContent = 'Publicar ganga →'; }
     };
 
-    document.getElementById('cambiarEstado').onclick = async () => {
-      const m = document.getElementById('estadoMsg');
-      const slug = document.getElementById('slugEstado').value.trim();
-      const estado = document.getElementById('nuevoEstado').value;
-      if (!pbToken) { m.textContent = '⚠️ Entrá en el paso 1 primero.'; return; }
-      if (!slug) { m.textContent = '⚠️ Falta el slug.'; return; }
-      m.textContent = '⏳ Actualizando...';
+    async function loadList() {
+      const box = $('gangaList'), m = $('estadoMsg');
+      if (!pbToken) return;
+      box.innerHTML = '<p style="color:var(--muted);font-size:.85rem">⏳ Cargando...</p>';
       try {
-        const q = await fetch(`${PB_URL}/api/collections/gangas/records?filter=${encodeURIComponent(`slug="${slug}"`)}&perPage=1`, {
-          headers: { Authorization: pbToken },
-        });
-        const d = await q.json();
-        if (!d.items?.length) throw new Error('No existe ese slug.');
-        const id = d.items[0].id;
-        const r = await fetch(`${PB_URL}/api/collections/gangas/records/${id}`, {
+        const r = await fetch(`${PB_URL}/api/collections/gangas/records?sort=-created&perPage=15`, { headers: { Authorization: pbToken } });
+        if (r.status === 401) { pbToken = ''; sessionStorage.removeItem('zt_pb_token'); paintConn(); throw new Error('Sesión vencida, volvé al paso 1.'); }
+        const d = await r.json();
+        if (!d.items?.length) { box.innerHTML = '<p style="color:var(--muted);font-size:.85rem">Todavía no hay gangas.</p>'; return; }
+        box.innerHTML = d.items.map((g) => `
+          <div class="g-row" data-id="${g.id}">
+            <span class="tag ${g.estado}">${g.estado}</span>
+            <span style="flex:1;min-width:140px"><b>${g.titulo}</b><br /><small style="color:var(--muted)">/${g.slug}/</small></span>
+            <button class="mini-btn" data-set="reservada">Reservada</button>
+            <button class="mini-btn" data-set="vendida">Vendida</button>
+            <button class="mini-btn" data-copy="https://zonatecno.uno/gangas/ver/?slug=${g.slug}&src=ig_post">📋 Link</button>
+          </div>`).join('');
+      } catch (err) { setMsg(m, '❌ ' + err.message, 'err'); }
+    }
+    $('reloadList').onclick = loadList;
+
+    $('gangaList').addEventListener('click', async (e) => {
+      const copy = e.target.closest('[data-copy]');
+      if (copy) { try { await navigator.clipboard.writeText(copy.dataset.copy); copy.textContent = '✓ Copiado'; setTimeout(() => (copy.textContent = '📋 Link'), 1500); } catch {} return; }
+      const btn = e.target.closest('[data-set]');
+      if (!btn) return;
+      const row = btn.closest('.g-row');
+      const m = $('estadoMsg');
+      setMsg(m, '⏳ Actualizando...', '');
+      try {
+        const r = await fetch(`${PB_URL}/api/collections/gangas/records/${row.dataset.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: pbToken },
-          body: JSON.stringify({ estado }),
+          body: JSON.stringify({ estado: btn.dataset.set }),
         });
         if (!r.ok) throw new Error('No se pudo actualizar (' + r.status + ').');
-        m.textContent = '✓ Actualizada a ' + estado + ' al instante.';
-      } catch (err) { m.textContent = '❌ ' + err.message; }
-    };
+        setMsg(m, '✓ Actualizada a ' + btn.dataset.set + '.', 'ok');
+        loadList();
+      } catch (err) { setMsg(m, '❌ ' + err.message, 'err'); }
+    });
   </script>
 </Layout>

@@ -12,6 +12,9 @@ export interface LocalProduct {
   dirty?: number; // 1 = pendiente de subir
   deleted?: number; // 1 = borrado lógicamente en la nube
   lastError?: string; // último error al intentar subir este producto
+  // Último stock confirmado en la nube. El stock se sincroniza como delta
+  // (stock - syncedStock) para no pisar ventas hechas en otro dispositivo.
+  syncedStock?: number;
   updatedAt: number;
 }
 
@@ -108,6 +111,10 @@ export interface LocalReceipt {
   biz_footer: string;
   dirty?: number;
   lastError?: string;
+  // 1 = anulado. No se borra el comprobante: se marca para que no reaparezca
+  // al sincronizar (un borrado solo local volvía a bajarse de la nube).
+  voided?: number;
+  deleted?: number; // 1 = oculto localmente (tombstone del anulado)
   local_id: string;
 }
 

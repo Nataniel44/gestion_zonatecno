@@ -186,6 +186,7 @@ const productFromCloud = (p: any, org_id: string, now: number): LocalProduct => 
   name: p.name,
   price: Number(p.price),
   stock: Number(p.stock),
+  syncedStock: Number(p.stock),
   min_stock: Number(p.min_stock ?? 3),
   category: p.category ?? 'general',
   barcode: p.barcode ?? '',
@@ -225,6 +226,40 @@ export async function pullProducts(org_id: string) {
   });
 }
 
+// El stock se sincroniza como *diferencia* contra el último valor confirmado
+// (`syncedStock`), no como valor absoluto. Así, si dos celulares venden casi a
+// la vez, cada uno aplica su descuento sobre el stock fresco de la nube en vez
+// de pisarlo (evita perder ventas concurrentes).
+async function reconcilePushedProduct(localId: string, pushedUpdatedAt: number, newStock: number) {
+  await db.transaction('rw', db.products, async () => {
+    const latest = await db.products.get(localId);
+    if (!latest) return;
+    const changed = latest.updatedAt !== pushedUpdatedAt;
+    await db.products.put({
+      ...latest,
+      syncedStock: newStock,
+      // Si hubo otra venta mientras subíamos, conservo ese cambio y dejo el
+      // producto sucio para que el delta restante suba en el próximo intento.
+      stock: changed ? latest.stock : newStock,
+      dirty: changed ? 1 : 0,
+      lastError: changed ? latest.lastError : '',
+    });
+  });
+}
+
+async function pushProductUpdate(local: LocalProduct) {
+  const remote: any = await pb.collection('products').getOne(local.id);
+  const remoteStock = Number(remote.stock || 0);
+  const base = Number.isFinite(local.syncedStock) ? Number(local.syncedStock) : remoteStock;
+  const nextStock = remoteStock + (Number(local.stock || 0) - base);
+  await pb.collection('products').update(local.id, {
+    org: local.org_id, name: local.name, price: local.price, stock: nextStock,
+    min_stock: local.min_stock, category: local.category, barcode: local.barcode ?? '', active: true,
+    local_id: local.id,
+  });
+  await reconcilePushedProduct(local.id, local.updatedAt, nextStock);
+}
+
 async function ensureProductRemote(local: LocalProduct): Promise<string | null> {
   // Si el producto fue borrado lógicamente, mantenemos la referencia remota
   // para las ventas históricas y desactivamos el producto en PocketBase.
@@ -239,15 +274,11 @@ async function ensureProductRemote(local: LocalProduct): Promise<string | null> 
     }
   }
 
-  // Los IDs locales son UUID; los de PocketBase son cortos. Así evitamos que
-  // un 400 por "id inválido" deje un producto nuevo sin poder crear.
+  // Los IDs locales son UUID; los de PocketBase son cortos. Si ya tiene un ID
+  // de PocketBase, el producto existe en la nube: se actualiza con delta.
   if (/^[a-z0-9]{15}$/i.test(local.id)) {
     try {
-      await pb.collection('products').update(local.id, {
-        org: local.org_id, name: local.name, price: local.price, stock: local.stock,
-        min_stock: local.min_stock, category: local.category, barcode: local.barcode ?? '', active: true,
-        local_id: local.id
-      });
+      await pushProductUpdate(local);
       return local.id;
     } catch (e) {
       if (!isNotFound(e)) throw e;
@@ -274,9 +305,12 @@ async function ensureProductRemote(local: LocalProduct): Promise<string | null> 
     await db.products.delete(local.id);
     if (latest) {
       const changedWhileUploading = latest.updatedAt > local.updatedAt;
+      const syncedStock = Number(created.stock ?? latest.stock);
       await db.products.put({
         ...latest,
         id: created.id,
+        syncedStock,
+        stock: changedWhileUploading ? latest.stock : syncedStock,
         dirty: changedWhileUploading ? 1 : 0,
         lastError: changedWhileUploading ? latest.lastError : '',
         updatedAt: Date.now()
@@ -691,25 +725,44 @@ export async function listReceipts(org_id: string): Promise<LocalReceipt[]> {
     try {
       const rows = await pb.collection('receipts').getFullList({ filter: `org="${org_id}"`, sort: '-created' });
       if (rows.length) {
-        const mapped: LocalReceipt[] = (rows as any[]).map((r) => ({
-          id: r.local_id || r.id, org_id, number: r.number ?? '', seq: Number(r.seq ?? 0),
-          title: r.title ?? 'Recibo', createdAt: new Date(r.issued_at ?? r.created ?? Date.now()).getTime(), updatedAt: Date.now(),
-          client_name: r.client_name ?? '', client_phone: r.client_phone ?? '', client_doc: r.client_doc ?? '',
-          device: r.device ?? '', device_detail: r.device_detail ?? '', problem: r.problem ?? '',
-          items: Array.isArray(r.items) ? r.items : JSON.parse(r.items_json ?? '[]'),
-          discount: Number(r.discount ?? 0), subtotal: Number(r.subtotal ?? 0), total: Number(r.total ?? 0),
-          pay_method: r.pay_method ?? 'efectivo', received: Number(r.received ?? 0), change: Number(r.change ?? 0),
-          status: (r.status ?? 'pagado') as LocalReceipt['status'],
-          notes: r.notes ?? '', warranty_text: r.warranty_text ?? '', seller: r.seller ?? '',
-          biz_name: r.biz_name ?? '', biz_address: r.biz_address ?? '', biz_phone: r.biz_phone ?? '',
-          biz_cuit: r.biz_cuit ?? '', biz_footer: r.biz_footer ?? '',
-          dirty: 0, local_id: r.local_id ?? r.id
-        }));
-        await db.receipts.bulkPut(mapped);
+        const mapped: LocalReceipt[] = (rows as any[]).map((r) => {
+          const localId = r.local_id || r.id;
+          const voided = r.voided ? 1 : 0;
+          return {
+            id: localId, org_id, number: r.number ?? '', seq: Number(r.seq ?? 0),
+            title: r.title ?? 'Recibo', createdAt: new Date(r.issued_at ?? r.created ?? Date.now()).getTime(), updatedAt: Date.now(),
+            client_name: r.client_name ?? '', client_phone: r.client_phone ?? '', client_doc: r.client_doc ?? '',
+            device: r.device ?? '', device_detail: r.device_detail ?? '', problem: r.problem ?? '',
+            items: Array.isArray(r.items) ? r.items : JSON.parse(r.items_json ?? '[]'),
+            discount: Number(r.discount ?? 0), subtotal: Number(r.subtotal ?? 0), total: Number(r.total ?? 0),
+            pay_method: r.pay_method ?? 'efectivo', received: Number(r.received ?? 0), change: Number(r.change ?? 0),
+            status: (r.status ?? 'pagado') as LocalReceipt['status'],
+            notes: r.notes ?? '', warranty_text: r.warranty_text ?? '', seller: r.seller ?? '',
+            biz_name: r.biz_name ?? '', biz_address: r.biz_address ?? '', biz_phone: r.biz_phone ?? '',
+            biz_cuit: r.biz_cuit ?? '', biz_footer: r.biz_footer ?? '',
+            dirty: 0, voided, deleted: voided, local_id: localId
+          };
+        });
+        await db.transaction('rw', db.receipts, async () => {
+          const localRows = await db.receipts.where('org_id').equals(org_id).toArray();
+          const byLocalId = new Map(localRows.map((x) => [x.local_id, x]));
+          const pending = new Set(localRows.filter((x) => x.dirty === 1).map((x) => x.local_id));
+          // Recibos viejos guardados con id != local_id (duplicaban al bajar de la nube).
+          const staleIds: string[] = [];
+          for (const m of mapped) {
+            const local = byLocalId.get(m.local_id);
+            if (local && local.id !== m.id && local.dirty !== 1) staleIds.push(local.id);
+          }
+          // No piso un cambio local pendiente (ej: un recibo recién anulado sin subir).
+          const fresh = mapped.filter((m) => !pending.has(m.local_id));
+          if (staleIds.length) await db.receipts.bulkDelete(staleIds);
+          if (fresh.length) await db.receipts.bulkPut(fresh);
+        });
       }
     } catch { /* seguimos local */ }
   }
-  return db.receipts.where('org_id').equals(org_id).reverse().sortBy('createdAt');
+  const all = await db.receipts.where('org_id').equals(org_id).reverse().sortBy('createdAt');
+  return all.filter((r) => !r.deleted);
 }
 
 export async function createReceipt(
@@ -729,8 +782,9 @@ export async function createReceipt(
   }
   const { subtotal, total } = receiptTotals(data.items, data.discount ?? 0);
   const received = round2(Number(data.received ?? total));
+  const id = uid();
   const r: LocalReceipt = {
-    id: uid(), org_id, number, seq,
+    id, org_id, number, seq,
     title: data.title || 'Recibo',
     createdAt: Date.now(), updatedAt: Date.now(),
     client_name: (data.client_name ?? '').trim(),
@@ -751,7 +805,7 @@ export async function createReceipt(
     seller,
     biz_name: profile.name, biz_address: profile.address, biz_phone: profile.phone,
     biz_cuit: profile.cuit, biz_footer: profile.footer,
-    dirty: 1, local_id: uid()
+    dirty: 1, local_id: id
   };
   if (!r.client_name) throw new Error('Poné al menos el nombre del cliente');
   if (!r.items.length) throw new Error('Agregá al menos un concepto al recibo');
@@ -764,9 +818,17 @@ export async function createReceipt(
   return r;
 }
 
-export async function deleteReceipt(id: string) {
-  await db.receipts.delete(id);
-  // Borrado solo local por ahora (el comprobante ya emitido no debería borrarse en nube sin auditoría).
+export async function deleteReceipt(org_id: string, id: string) {
+  const r = await db.receipts.get(id);
+  if (!r) return;
+  // Anulación, no borrado: se marca `voided` en la nube para que el
+  // comprobante no vuelva a aparecer al sincronizar.
+  r.voided = 1;
+  r.deleted = 1;
+  r.dirty = 1;
+  r.updatedAt = Date.now();
+  await db.receipts.put(r);
+  void pushReceipts(org_id).catch(() => undefined);
 }
 
 function receiptPayload(org_id: string, r: LocalReceipt) {
@@ -780,7 +842,8 @@ function receiptPayload(org_id: string, r: LocalReceipt) {
     pay_method: r.pay_method, received: r.received, change: r.change, status: r.status,
     notes: r.notes, warranty_text: r.warranty_text, seller: r.seller,
     biz_name: r.biz_name, biz_address: r.biz_address, biz_phone: r.biz_phone,
-    biz_cuit: r.biz_cuit, biz_footer: r.biz_footer, local_id: r.local_id
+    biz_cuit: r.biz_cuit, biz_footer: r.biz_footer, local_id: r.local_id,
+    voided: r.voided ? true : false
   };
 }
 
