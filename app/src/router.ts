@@ -37,9 +37,19 @@ export async function router() {
   }
   refreshInstallUI();
   document.querySelectorAll('.mobnav a.on, .nav a.on').forEach((a) => a.setAttribute('aria-current', 'page'));
+  scrollToTop();
+}
+
+// Cada sección es una página nueva: arrancamos arriba para no quedar a mitad
+// de la vista anterior (especialmente en el celular).
+function scrollToTop() {
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
 }
 
 initScanner();
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 addEventListener('hashchange', router);
 
 // ---- Vigía de conexión: barra offline, recarga sola y botón reintentar ----
